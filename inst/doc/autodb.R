@@ -1,4 +1,4 @@
-## ----include = FALSE----------------------------------------------------------
+## ----include=FALSE------------------------------------------------------------
 knitr::opts_chunk$set(
   collapse = TRUE,
   comment = "#>",
@@ -33,9 +33,7 @@ if (requireNamespace("DiagrammeR", quietly = TRUE)) {
 maybe_plot(db)
 
 ## -----------------------------------------------------------------------------
-deps <- discover(ChickWeight, accuracy = 1, progress = TRUE)
-
-## -----------------------------------------------------------------------------
+deps <- discover(ChickWeight, progress = TRUE)
 deps
 
 ## -----------------------------------------------------------------------------
@@ -57,17 +55,17 @@ knitr::kable(as.data.frame(Titanic))
 show(autodb(as.data.frame(Titanic)))
 
 ## -----------------------------------------------------------------------------
-titanic_deps_freqonly <- discover(as.data.frame(Titanic), 1, exclude = "Freq")
+titanic_deps_freqonly <- discover(as.data.frame(Titanic), exclude = "Freq")
 titanic_deps_freqonly
 
 ## -----------------------------------------------------------------------------
-identical(titanic_deps_freqonly, discover(as.data.frame(Titanic), 1, exclude_class = "numeric"))
+identical(titanic_deps_freqonly, discover(as.data.frame(Titanic), exclude_class = "numeric"))
 
 ## -----------------------------------------------------------------------------
 show(autodb(as.data.frame(Titanic), exclude = "Freq"))
 
 ## -----------------------------------------------------------------------------
-titanic_deps <- discover(as.data.frame(Titanic), 1)
+titanic_deps <- discover(as.data.frame(Titanic))
 titanic_deps
 
 ## -----------------------------------------------------------------------------
@@ -81,7 +79,7 @@ linked_schema
 normalise(deps)
 
 ## -----------------------------------------------------------------------------
-maybe_plot(linked_schema)
+show(linked_schema)
 
 ## ----chickWeight_db2_plot-----------------------------------------------------
 db2 <- decompose(ChickWeight, linked_schema)
@@ -94,16 +92,11 @@ identical(rejoined, ChickWeight)
 df_equiv(rejoined, ChickWeight)
 
 ## ----nudge_classes------------------------------------------------------------
-if (requireNamespace("DiagrammeR", quietly = TRUE)) {
-  DiagrammeR::grViz(gv(nudge, name = "nudge"))
-}else{
-  summary(nudge)
-}
+show(nudge)
 
 ## ----nudge_database-----------------------------------------------------------
 nudge_deps <- discover(
   nudge,
-  accuracy = 1,
   exclude = c("n_study", "n_comparison", "n_control", "n_intervention"),
   exclude_class = "numeric"
 )
@@ -137,11 +130,12 @@ nudge_schema_filtered <- normalise(nudge_deps_filtered, remove_avoidable = TRUE)
 show(nudge_schema_filtered)
 
 ## ----nudge_sizes--------------------------------------------------------------
-nudge_deps_size <- discover(nudge[, startsWith(names(nudge), "n_")], 1)
+nudge_deps_size <- discover(nudge[, startsWith(names(nudge), "n_")])
 nudge_deps_size
 nudge_deps_final <- c(nudge_deps_filtered, nudge_deps_size)
 nudge_schema_final <- normalise(nudge_deps_final, remove_avoidable = TRUE)
 nudge_database_final <- decompose(nudge, nudge_schema_final)
+
 show(nudge_schema_final)
 
 ## ----nudge_size_check---------------------------------------------------------
@@ -194,19 +188,19 @@ show(normalise(example_fds, ensure_lossless = FALSE))
 show(normalise(example_fds[-2], ensure_lossless = FALSE))
 
 ## ----nudge_approximate_cheat--------------------------------------------------
-nudge_approx_cheat_database_schema <- discover(
+show(normalise(discover(
   nudge,
   accuracy = 1 - 2/nrow(nudge),
+  method = "DFD",
   exclude = c("n_study", "n_comparison", "n_control", "n_intervention"),
   exclude_class = "numeric"
-) |>
-  normalise()
-show(nudge_approx_cheat_database_schema)
+)))
 
 ## ----nudge_approximate--------------------------------------------------------
 nudge_approx_database_schema <- discover(
   nudge,
   accuracy = 0.99,
+  method = "DFD",
   exclude = c("n_study", "n_comparison", "n_control", "n_intervention"),
   exclude_class = "numeric"
 ) |>
@@ -238,17 +232,245 @@ avoid_schema_removed <- normalise(
 )
 show(avoid_schema_removed)
 
+## ----nudge, include=FALSE-----------------------------------------------------
+autodb(
+  nudge,
+  remove_avoidable = TRUE,
+  exclude_class = "numeric",
+  exclude = "n_study"
+) |>
+  reduce(main = "study_id") |>
+  show()
+
+## ----nonconnected, include=FALSE----------------------------------------------
+fds <- functional_dependency(
+  list(
+    list("a", "b"),
+    list("a", "c"),
+    list("b", "d"),
+    list("c", "e"),
+    list(c("d", "e"), "f")
+  ),
+  letters[1:6]
+)
+fds
+
+## ----nonconnected2, include=FALSE---------------------------------------------
+schema <- normalise(fds)
+show(schema)
+
+## -----------------------------------------------------------------------------
+if (requireNamespace("DiagrammeR", quietly = TRUE)) DiagrammeR::grViz("digraph {
+  rankdir = \"LR\"
+  node [shape=plaintext];
+
+  \"a\" [label = <
+    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">
+    <TR><TD PORT=\"TITLE\" COLSPAN=\"2\">a</TD></TR>
+    <TR><TD PORT=\"TO_a\">a</TD><TD PORT=\"FROM_a\" BGCOLOR=\"black\"></TD></TR>
+    <TR><TD PORT=\"TO_b\">b</TD><TD PORT=\"FROM_b\"></TD></TR>
+    <TR><TD PORT=\"TO_c\">c</TD><TD PORT=\"FROM_c\"></TD></TR>
+    </TABLE>>];
+  \"b\" [label = <
+    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">
+    <TR><TD PORT=\"TITLE\" COLSPAN=\"2\">b</TD></TR>
+    <TR><TD PORT=\"TO_b\">b</TD><TD PORT=\"FROM_b\" BGCOLOR=\"black\"></TD></TR>
+    <TR><TD PORT=\"TO_d\">d</TD><TD PORT=\"FROM_d\"></TD></TR>
+    </TABLE>>];
+  \"c\" [label = <
+    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">
+    <TR><TD PORT=\"TITLE\" COLSPAN=\"2\">c</TD></TR>
+    <TR><TD PORT=\"TO_c\">c</TD><TD PORT=\"FROM_c\" BGCOLOR=\"black\"></TD></TR>
+    <TR><TD PORT=\"TO_e\">e</TD><TD PORT=\"FROM_e\"></TD></TR>
+    </TABLE>>];
+  \"d_e\" [label = <
+    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">
+    <TR><TD PORT=\"TITLE\" COLSPAN=\"2\">d_e</TD></TR>
+    <TR><TD PORT=\"TO_d\">d</TD><TD PORT=\"FROM_d\" BGCOLOR=\"black\"></TD></TR>
+    <TR><TD PORT=\"TO_e\">e</TD><TD PORT=\"FROM_e\" BGCOLOR=\"black\"></TD></TR>
+    <TR><TD PORT=\"TO_f\">f</TD><TD PORT=\"FROM_f\"></TD></TR>
+    </TABLE>>];
+  \"view\" [label = <
+    <TABLE BGCOLOR=\"lightgrey\" BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">
+    <TR><TD PORT=\"TITLE\" COLSPAN=\"1\">view</TD></TR>
+    <TR><TD>a</TD></TR>
+    <TR><TD>b</TD></TR>
+    <TR><TD>c</TD></TR>
+    <TR><TD>d</TD></TR>
+    <TR><TD>e</TD></TR>
+    <TR><TD>f</TD></TR>
+    </TABLE>>];
+
+  \"a\":FROM_b -> \"b\":TO_b;
+  \"a\":FROM_c -> \"c\":TO_c;
+
+  \"view\":TITLE -> \"a\":TITLE [arrowhead=\"empty\" style=\"dashed\"];
+  \"view\":TITLE -> \"d_e\":TITLE [arrowhead=\"empty\" style=\"dashed\"];
+}")
+
+## -----------------------------------------------------------------------------
+if (requireNamespace("DiagrammeR", quietly = TRUE)) DiagrammeR::grViz("digraph {
+  rankdir = \"LR\"
+  node [shape=plaintext];
+
+  \"a\" [label = <
+    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">
+    <TR><TD PORT=\"TITLE\" COLSPAN=\"2\">a</TD></TR>
+    <TR><TD PORT=\"TO_a\">a</TD><TD PORT=\"FROM_a\" BGCOLOR=\"black\"></TD></TR>
+    <TR><TD PORT=\"TO_b\">b</TD><TD PORT=\"FROM_b\"></TD></TR>
+    <TR><TD PORT=\"TO_c\">c</TD><TD PORT=\"FROM_c\"></TD></TR>
+    </TABLE>>];
+  \"b\" [label = <
+    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">
+    <TR><TD PORT=\"TITLE\" COLSPAN=\"2\">b</TD></TR>
+    <TR><TD PORT=\"TO_b\">b</TD><TD PORT=\"FROM_b\" BGCOLOR=\"black\"></TD></TR>
+    <TR><TD PORT=\"TO_d\">d</TD><TD PORT=\"FROM_d\"></TD></TR>
+    </TABLE>>];
+  \"c\" [label = <
+    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">
+    <TR><TD PORT=\"TITLE\" COLSPAN=\"2\">c</TD></TR>
+    <TR><TD PORT=\"TO_c\">c</TD><TD PORT=\"FROM_c\" BGCOLOR=\"black\"></TD></TR>
+    <TR><TD PORT=\"TO_e\">e</TD><TD PORT=\"FROM_e\"></TD></TR>
+    </TABLE>>];
+  \"d_e\" [label = <
+    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">
+    <TR><TD PORT=\"TITLE\" COLSPAN=\"2\">d_e</TD></TR>
+    <TR><TD PORT=\"TO_d\">d</TD><TD PORT=\"FROM_d\" BGCOLOR=\"black\"></TD></TR>
+    <TR><TD PORT=\"TO_e\">e</TD><TD PORT=\"FROM_e\" BGCOLOR=\"black\"></TD></TR>
+    <TR><TD PORT=\"TO_f\">f</TD><TD PORT=\"FROM_f\"></TD></TR>
+    </TABLE>>];
+  \"view\" [label = <
+    <TABLE BGCOLOR=\"lightgrey\" BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">
+    <TR><TD PORT=\"TITLE\" COLSPAN=\"1\">view</TD></TR>
+    <TR><TD>a</TD></TR>
+    <TR><TD>b</TD></TR>
+    <TR><TD>c</TD></TR>
+    <TR><TD>d</TD></TR>
+    <TR><TD>e</TD></TR>
+    <TR><TD>f</TD></TR>
+    </TABLE>>];
+  \"view2\" [label = <
+    <TABLE BGCOLOR=\"lightgrey\" BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">
+    <TR><TD PORT=\"TITLE\" COLSPAN=\"1\">view</TD></TR>
+    <TR><TD>a</TD></TR>
+    <TR><TD>b</TD></TR>
+    <TR><TD>c</TD></TR>
+    <TR><TD>d</TD></TR>
+    <TR><TD>e</TD></TR>
+    </TABLE>>];
+  \"view3\" [label = <
+    <TABLE BGCOLOR=\"lightgrey\" BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">
+    <TR><TD PORT=\"TITLE\" COLSPAN=\"1\">view</TD></TR>
+    <TR><TD>a</TD></TR>
+    <TR><TD>b</TD></TR>
+    <TR><TD>c</TD></TR>
+    <TR><TD>d</TD></TR>
+    </TABLE>>];
+
+  \"a\":FROM_b -> \"b\":TO_b;
+  \"a\":FROM_c -> \"c\":TO_c;
+
+  \"view\":TITLE -> \"view2\":TITLE [arrowhead=\"empty\" style=\"dashed\"];
+  \"view\":TITLE -> \"d_e\":TITLE [arrowhead=\"empty\" style=\"dashed\"];
+  \"view2\":TITLE -> \"view3\":TITLE [arrowhead=\"empty\" style=\"dashed\"];
+  \"view2\":TITLE -> \"c\":TITLE [arrowhead=\"empty\" style=\"dashed\"];
+  \"view3\":TITLE -> \"a\":TITLE [arrowhead=\"empty\" style=\"dashed\"];
+  \"view3\":TITLE -> \"b\":TITLE [arrowhead=\"empty\" style=\"dashed\"];
+}")
+
+## ----bcnf, include=FALSE------------------------------------------------------
+fds <- functional_dependency(
+  list(list(c("a", "b"), "c"), list("c", "a")),
+  letters[1:3]
+)
+fds
+schema <- normalise(fds)
+show(schema)
+
+## ----bcnf2--------------------------------------------------------------------
+db <- schema |>
+  create() |>
+  insert(data.frame(c = 1:2, a = 1:2), relations = "c") |>
+  insert(data.frame(a = 1:2, b = 1L, c = 2:1), relations = "a_b")
+knitr::kable(records(db)$a_b)
+knitr::kable(records(db)$c)
+
+## ----bcnf3, echo=FALSE--------------------------------------------------------
+schema2 <- schema
+keys(schema2)$a_b <- list(c("b", "c"))
+attrs(schema2)$a_b <- c("b", "c")
+names(schema2)[names(schema2) == "a_b"] <- "b_c"
+show(schema2)
+
+## -----------------------------------------------------------------------------
+if (requireNamespace("DiagrammeR", quietly = TRUE)) DiagrammeR::grViz("digraph {
+  rankdir = \"LR\"
+  node [shape=plaintext];
+
+  \"c\" [label = <
+    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">
+    <TR><TD PORT=\"TITLE\" COLSPAN=\"2\">c</TD></TR>
+    <TR><TD PORT=\"TO_c\">c</TD><TD PORT=\"FROM_c\" BGCOLOR=\"black\"></TD></TR>
+    <TR><TD PORT=\"TO_a\">a</TD><TD PORT=\"FROM_a\"></TD></TR>
+    </TABLE>>];
+  \"b_c\" [label = <
+    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">
+    <TR><TD PORT=\"TITLE\" COLSPAN=\"2\">b_c</TD></TR>
+    <TR><TD PORT=\"TO_b\">b</TD><TD PORT=\"FROM_b\" BGCOLOR=\"black\"></TD></TR>
+    <TR><TD PORT=\"TO_c\">c</TD><TD PORT=\"FROM_c\" BGCOLOR=\"black\"></TD></TR>
+    </TABLE>>];
+  \"view\" [label = <
+    <TABLE BGCOLOR=\"lightgrey\" BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">
+    <TR><TD PORT=\"TITLE\" COLSPAN=\"2\">view</TD></TR>
+    <TR><TD>a</TD><TD BGCOLOR=\"black\"></TD></TR>
+    <TR><TD>b</TD><TD BGCOLOR=\"black\"></TD></TR>
+    <TR><TD>c</TD><TD></TD></TR>
+    </TABLE>>];
+
+  \"b_c\":FROM_c -> \"c\":TO_c;
+
+  \"view\":TITLE -> \"b_c\":TITLE [arrowhead=\"empty\" style=\"dashed\"];
+  \"view\":TITLE -> \"c\":TITLE [arrowhead=\"empty\" style=\"dashed\"];
+}")
+
+## ----example_data_frame_with_NAs----------------------------------------------
+df_nas <- data.frame(
+  patient = c(1L, 2L, 3L, 4L),
+  trial_entry_date = as.Date(c("2022/05/02", "2022/06/06", "2022/04/01", "2022/03/19")),
+  trial_exit_date = as.Date(c(NA, NA, "2022/10/07", NA))
+)
+knitr::kable(df_nas)
+
+## ----example_data_frame_with_NAs_autodb---------------------------------------
+show(autodb(df_nas))
+
+## ----example_data_frame_with_NAs_nullably_normalised--------------------------
+ideal_db <- decompose(
+  df_nas,
+  database_schema(
+    relation_schema(
+      list(
+        patient = list(c("patient", "trial_entry_date"), list("patient")),
+        patient_exit = list(c("patient", "trial_exit_date"), list("patient"))
+      ),
+      names(df_nas)
+    ),
+    list(list("patient_exit", "patient", "patient", "patient"))
+  )
+)
+records(ideal_db)$patient_exit <- subset(records(ideal_db)$patient_exit, !is.na(trial_exit_date))
+show(ideal_db)
+
 ## ----example_data_frame_with_interval_option----------------------------------
 df_options <- data.frame(
   id = 1:20,
   value = c(2.3, 2.3, 5.7, NA_real_, NA_real_, NA_real_, NA_real_, NA_real_, NA_real_, NA_real_, NA_real_, NA_real_, NA_real_, NA_real_, NA_real_, NA_real_, NA_real_, NA_real_, NA_real_, NA_real_),
   lower_bound = c(NA_real_, NA_real_, NA_real_, 2.4, 0, 1, 0, 5.6, 2.4, 5.3, 5.3, 2.4, 2.4, 2.4, 2.4, 2.4, 2.4, 2.4, 5.6, 2.4),
   upper_bound = c(NA_real_, NA_real_, NA_real_, 7.1, 10, 10, 13.1, 25.8, 10, 13.1, 10, 25.8, 25.8, 25.8, 25.8,13.1, 13.1, 25.8, 25.8, 25.8),
-  interval_distribution = c(NA, NA, NA, "uniform", "uniform", "uniform", "uniform", "uniform", "Beta", "Beta", "Beta", "Beta", "Kumaraswamy", "Kumaraswamy", "Kumaraswamy", "Kumaraswamy", "PERT", "PERT", "PERT", "PERT"),
+  interval_distribution = factor(c(NA, NA, NA, "uniform", "uniform", "uniform", "uniform", "uniform", "Beta", "Beta", "Beta", "Beta", "Kumaraswamy", "Kumaraswamy", "Kumaraswamy", "Kumaraswamy", "PERT", "PERT", "PERT", "PERT")),
   param1 = c(NA, NA, NA, NA, NA, NA, NA, NA, 1, 1, 1, 2, 2, 2.1, 2, 2, 2, 1, 2, 2),
   param2 = c(NA, NA, NA, NA, NA, NA, NA, NA, 1, 2, 2, 2, 2, 1, 1, 1, NA, NA, NA, NA)
 )
-df_options$interval_distribution <- factor(df_options$interval_distribution)
 knitr::kable(df_options)
 
 ## ----example_data_frame_with_interval_option_db-------------------------------
@@ -256,21 +478,10 @@ db_options <- autodb(df_options)
 show(db_options)
 
 ## ----example_data_frame_with_interval_option_nulls----------------------------
-df_options_with_presence <- data.frame(
-  id = df_options$id,
-  value = df_options$value,
-  value_present = !is.na(df_options$value),
-  lower_bound = df_options$lower_bound,
-  lower_bound_present = !is.na(df_options$lower_bound),
-  upper_bound = df_options$upper_bound,
-  upper_bound_present = !is.na(df_options$upper_bound),
-  interval_distribution = df_options$interval_distribution,
-  interval_distribution_present = !is.na(df_options$interval_distribution),
-  param1 = df_options$param1,
-  param1_present = !is.na(df_options$param1),
-  param2 = df_options$param2,
-  param2_present = !is.na(df_options$param2)
-)
+df_options_presence <- df_options[vapply(df_options, anyNA, logical(1))]
+df_options_presence[] <- lapply(df_options_presence, Negate(is.na))
+names(df_options_presence) <- paste0(names(df_options_presence), "_present")
+df_options_with_presence <- cbind(df_options, df_options_presence)
 
 ## ----example_data_frame_with_interval_option_nulls_db-------------------------
 db_options_with_presence <- autodb(df_options_with_presence)
@@ -289,42 +500,48 @@ db_options_with_presence_p1absent <- autodb(subset(
 ))
 show(db_options_with_presence_p1absent)
 
+## ----example_data_frame_with_interval_option_p1absent_constants---------------
+knitr::kable(records(db_options_with_presence_p1absent)$constants)
+
 ## ----example_data_frame_with_interval_option_p1present_db---------------------
 show(autodb(subset(
   df_options_with_presence,
   param1_present
 )))
 
-## ----example_data_frame_with_interval_option_p1absent_constants---------------
-knitr::kable(records(db_options_with_presence_p1absent)$constants)
-
-## ----example_data_frame_with_NAs----------------------------------------------
-df_nas <- data.frame(
-  patient = c(1L, 2L, 3L, 4L),
-  trial_entry_date = as.Date(c("2022/05/02", "2022/06/06", "2022/04/01", "2022/03/19")),
-  death_date = as.Date(c(NA, NA, "2022/10/07", NA))
-)
-knitr::kable(df_nas)
-
-## ----example_data_frame_with_NAs_autodb---------------------------------------
-show(autodb(df_nas))
-
-## ----example_data_frame_with_NAs_nullably_normalised--------------------------
-ideal_db <- decompose(
-  df_nas,
-  database_schema(
-    relation_schema(
-      list(
-        patient = list(c("patient", "trial_entry_date"), list("patient")),
-        patient_death = list(c("patient", "death_date"), list("patient"))
-      ),
-      names(df_nas)
+## -----------------------------------------------------------------------------
+show(database_schema(
+  relation_schema(
+    list(
+      citation = list(c("citer_id", "citee_id"), list(c("citer_id", "citee_id"))),
+      citer = list(c("citer_id", "citer_title", "citer_author", "citer_year"), list("citer_id")),
+      citee = list(c("citee_id", "citee_title", "citee_author", "citee_year"), list("citee_id"))
     ),
-    list(list("patient_death", "patient", "patient", "patient"))
+    c(
+      "citer_id", "citer_title", "citer_author", "citer_year",
+      "citee_id", "citee_title", "citee_author", "citee_year"
+    )
+  ),
+  list(
+    list("citation", "citer_id", "citer", "citer_id"),
+    list("citation", "citee_id", "citee", "citee_id")
   )
-)
-records(ideal_db)$patient_death <- subset(records(ideal_db)$patient_death, !is.na(death_date))
-show(ideal_db)
+))
+
+## -----------------------------------------------------------------------------
+show(database_schema(
+  relation_schema(
+    list(
+      citation = list(c("citer", "citee"), list(c("citer", "citee"))),
+      publication = list(c("id", "title", "author", "year"), list("id"))
+    ),
+    c("citer", "citee", "id", "title", "author", "year")
+  ),
+  list(
+    list("citation", "citer", "publication", "id"),
+    list("citation", "citee", "publication", "id")
+  )
+))
 
 ## ----factor_example_datasets--------------------------------------------------
 df_badmerge_int <- cbind(
@@ -412,7 +629,4 @@ show(schema_redkey_fix)
 ## ----dup_example--------------------------------------------------------------
 dup_db <- autodb(ChickWeight)
 show(dup_db)
-
-## ----dup_example_dup----------------------------------------------------------
-show(dup_db[c(1, 1, 2, 2, 2)])
 

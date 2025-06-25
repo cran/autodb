@@ -763,6 +763,14 @@ describe("create", {
 })
 
 describe("insert", {
+  it("expects unique value column names", {
+    rel <- create(relation_schema(list(a = list("a", list("a"))), "a"))
+    vals <- data.frame(a = FALSE, a = TRUE, check.names = FALSE)
+    expect_error(
+      insert(rel, vals),
+      "^duplicate column names in vals$"
+    )
+  })
   it("expects relations to be unique elements", {
     rel <- create(relation_schema(list(a = list("a", list("a"))), "a"))
     expect_error(
@@ -875,7 +883,7 @@ describe("insert", {
   })
   it("returns an error when inserting key violations (i.e. same key, different record)", {
     df <- data.frame(a = 1:3, b = c(1:2, 1L), c = 1L)
-    deps <- discover(df, 1)
+    deps <- discover(df)
     ds <- normalise(deps)
     db <- decompose(df, ds)
     dr <- subrelations(db)
@@ -912,7 +920,7 @@ describe("insert", {
   })
   it("returns an error if given extraneous attributes to inserted", {
     df <- data.frame(a = 1:3, b = c(1L, 1L, 2L))
-    r <- decompose(df, normalise(discover(df, 1)))
+    r <- decompose(df, normalise(discover(df)))
     expect_error(
       insert(r, data.frame(a = 1L, b = 1L, c = 1L)),
       "^inserted attributes aren't included in target: c$"
@@ -925,7 +933,7 @@ describe("insert", {
   })
   it("can insert only partial sets of attributes", {
     df <- data.frame(a = 1:4, b = c(1:3, 1L), c = c(1L, 1L, 2L, 1L))
-    r <- insert(create(synthesise(discover(df, 1))), df)
+    r <- insert(create(synthesise(discover(df))), df)
     expect_identical(
       insert(r, data.frame(b = 4L, c = 3L)),
       relation(
@@ -1112,7 +1120,7 @@ describe("insert", {
         nrow(df1) >= 1,
         nrow(df2) >= 1
       )
-      db_schema <- normalise(discover(df, 1))
+      db_schema <- normalise(discover(df))
       rel_schema <- subschemas(db_schema)
       relats <- references(db_schema)
       rel <- create(rel_schema) |> insert(df1)
@@ -1163,6 +1171,37 @@ describe("insert", {
       discard.limit = 200,
       curry = TRUE
     )
+  })
+  it("can fail if inserting with different float precision", {
+    x <- data.frame(
+      a = c(0.12345678, 0.12345679),
+      b = c(FALSE, TRUE)
+    )
+    rs <- relation_schema(
+      list(
+        constants = list("a", list(character())),
+        b = list("b", list("b"))
+      ),
+      c("a", "b")
+    )
+    expect_error(insert(create(rs), x, digits = NA))
+    expect_no_error(insert(create(rs), x, digits = 7))
+
+    ds <- database_schema(rs, list())
+    expect_error(insert(create(ds), x, digits = NA))
+    expect_no_error(insert(create(ds), x, digits = 7))
+  })
+  it("can include row names", {
+    x <- data.frame(a = rep(1, 9), row.names = letters[1:9])
+    rel <- create(relation_schema(
+      list(row = list(c("row", "a"), list("row"))),
+      c("row", "a")
+    ))
+    db <- database(rel, list())
+    rel <- insert(rel, x, keep_rownames = TRUE)
+    db <- insert(db, x, keep_rownames = TRUE)
+    expect_identical(nrow(records(rel)[[1]]), 9L)
+    expect_identical(nrow(records(db)[[1]]), 9L)
   })
 })
 

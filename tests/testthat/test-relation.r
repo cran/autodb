@@ -102,7 +102,7 @@ describe("relation", {
         list(a = list(df = data.frame(a = rep(1L, 2L)), keys = list("a"))),
         "a"
       ),
-      "^relations must satisfy their keys: element 1\\.\\{a\\}$"
+      "^relations must satisfy their keys: element a\\.\\{a\\}$"
     )
     expect_error(
       relation(
@@ -112,7 +112,7 @@ describe("relation", {
         )),
         "a"
       ),
-      "^relations must satisfy their keys: element 1\\.\\{\\}$"
+      "^relations must satisfy their keys: element a\\.\\{\\}$"
     )
   })
   it("expects valid input: unique relation names", {
@@ -807,6 +807,21 @@ describe("relation", {
       }
     )
   })
+  it("expects new attribute names to be unique", {
+    expect_error(
+      rename_attrs(
+        relation(
+          list(X = list(
+            df = data.frame(a = logical(), b = logical()),
+            keys = list(character())
+          )),
+          c("a", "b")
+        ),
+        c("c", "c")
+      ),
+      "^attrs_order must be unique: duplicated c$"
+    )
+  })
 
   it("prints", {
     expect_output(
@@ -858,5 +873,19 @@ describe("relation", {
       create()
     expect_no_error(tb <- data.frame(id = 1:2, relation = rel))
     expect_identical(tb$relation, rel)
+  })
+  it("can be formatted, e.g. for data.frame entry", {
+    rel <- relation_schema(
+      list(
+        a_b = list(c("a", "b", "c"), list(c("a", "b"))),
+        a = list(c("a", "d"), list("a"))
+      ),
+      letters[1:4]
+    ) |>
+      create()
+    expect_identical(
+      format(rel),
+      c("relation a_b (0 records)", "relation a (0 records)")
+    )
   })
 })

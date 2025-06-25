@@ -135,14 +135,7 @@ relation <- function(relations, attrs_order) {
   stopifnot(is.list(relations))
   stopifnot(is.character(attrs_order))
 
-  stop_with_values_if(
-    attrs_order,
-    duplicated(attrs_order),
-    "attrs_order must be unique",
-    "duplicated",
-    suffix_else = "",
-    unique = TRUE
-  )
+  check_relation_attrs_order_unique(attrs_order)
   check_relation_names(names(relations))
   stop_with_elements_if(
     !vapply(relations, \(r) !anyDuplicated(names(r$df)), logical(1)),
@@ -267,7 +260,7 @@ relation <- function(relations, attrs_order) {
     prefix = "element"
   )
   unsatisfied_keys <- lapply(
-    seq_along(relations),
+    names(relations),
     \(n) {
       r <- relations[[n]]
       failed <- which(vapply(
@@ -328,13 +321,14 @@ attrs_order.relation <- function(x, ...) {
 
 #' @exportS3Method
 rename_attrs.relation <- function(x, names, ...) {
+  check_relation_attrs_order_unique(names)
   old <- attrs_order(x)
   new_records <- lapply(
     records(x),
     \(df) stats::setNames(df, names[match(names(df), old)])
   )
   new_keys <- lapply(keys(x), lapply, \(as) names[match(as, old)])
-  relation(
+  relation_nocheck(
     stats::setNames(
       Map(\(recs, ks) list(df = recs, keys = ks), new_records, new_keys),
       names(x)
@@ -348,6 +342,17 @@ rename_attrs.relation <- function(x, names, ...) {
   check_relation_names(value)
   attr(x, "names") <- value
   x
+}
+
+check_relation_attrs_order_unique <- function(attrs_order) {
+  stop_with_values_if(
+    attrs_order,
+    duplicated(attrs_order),
+    "attrs_order must be unique",
+    "duplicated",
+    suffix_else = "",
+    unique = TRUE
+  )
 }
 
 check_relation_names <- function(nms) {
@@ -476,13 +481,29 @@ c.relation <- function(...) {
 }
 
 #' @exportS3Method
-insert.relation <- function(x, vals, relations = names(x), all = FALSE, ...) {
+insert.relation <- function(
+  x,
+  vals,
+  relations = names(x),
+  all = FALSE,
+  keep_rownames = FALSE,
+  digits = getOption("digits"),
+  ...
+) {
   if (any(!is.element(relations, names(x))))
     stop("given relations must exist")
   if (anyDuplicated(relations))
     stop("given relations must be unique")
+  if (anyDuplicated(names(vals)))
+    stop("duplicate column names in vals")
   if (length(relations) == 0)
     return(x)
+  if (!is.na(digits))
+    vals <- df_coarsen(vals, digits)
+  if (!isFALSE(keep_rownames)) {
+    nm <- if (isTRUE(keep_rownames)) "row" else keep_rownames[[1]]
+    vals <- cbind(stats::setNames(data.frame(rownames(vals)), nm), vals)
+  }
   extra <- setdiff(names(vals), attrs_order(x))
   if (length(extra) > 0L)
     stop(paste(
@@ -660,7 +681,7 @@ print.relation <- function(x, max = 10, ...) {
 #' @exportS3Method
 format.relation <- function(x, ...) {
   paste0(
-    "schema ",
+    "relation ",
     names(x),
     " (",
     vapply(

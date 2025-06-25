@@ -11,7 +11,7 @@ describe("autodb", {
   it("is the same as discover >> normalise >> decompose", {
     df <- data.frame(a = 1:4, b = 1:2)
     database <- autodb(df)
-    database2 <- discover(df, 1) |>
+    database2 <- discover(df) |>
       normalise() |>
       decompose(df = df)
     expect_identical(database, database2)
@@ -20,19 +20,30 @@ describe("autodb", {
     forall(
       list(
         gen_df(6, 7),
+        digits = gen.element(c(7:1, NA_integer_)),
         ensure_lossless = gen.element(c(FALSE, TRUE)),
         remove_avoidable = gen.element(c(FALSE, TRUE))
       ),
-      expect_biidentical(
-        uncurry(autodb),
-        biapply(
-          with_args("[[", 1),
-          (\(x) c(list(discover(x[[1]], 1)), x[-1])) %>>%
-            (uncurry(normalise))
-        ) %>>%
-          (uncurry(decompose))
-      ),
-      curry = FALSE
+      \(df, digits, ensure_lossless, remove_avoidable) {
+        expect_identical(
+          autodb(
+            df,
+            digits = digits,
+            ensure_lossless = ensure_lossless,
+            remove_avoidable = remove_avoidable
+          ),
+          decompose(
+            df,
+            normalise(
+              discover(df, digits = digits),
+              ensure_lossless = ensure_lossless,
+              remove_avoidable = remove_avoidable
+            ),
+            digits = digits
+          )
+        )
+      },
+      curry = TRUE
     )
   })
   it("runs DFD and normalises the given data.frame", {
@@ -207,5 +218,29 @@ describe("autodb", {
     expect_identical(nrow(records(db_dum)[[1]]), 0L)
     expect_identical(nrow(records(db_dee)[[1]]), 1L)
     expect_identical(db_deux, db_dee)
+  })
+  it("adds row names to database if added in keep_rownames", {
+    x <- data.frame(
+      a = c(1, 1, 1, 2, 2, 3, 3, 3, 4),
+      b = c(1, 1, 1, 1, 1, 2, 2, 2, 3),
+      row.names = letters[1:9]
+    )
+    db <- autodb(x, keep_rownames = TRUE)
+    expect_identical(
+      db,
+      database(
+        relation(
+          list(
+            row = list(
+              df = cbind(data.frame(row = letters[1:9]), x["a"]),
+              keys = list("row")
+            ),
+            a = list(df = unique(x), keys = list("a"))
+          ),
+          c("row", "a", "b")
+        ),
+        list(list("row", "a", "a", "a"))
+      )
+    )
   })
 })

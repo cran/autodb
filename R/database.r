@@ -83,7 +83,10 @@
 #' print(database(
 #'   relation(
 #'     list(
-#'       citation = list(df = data.frame(citer = 1:5, citee = 6:10), keys = list(c("citer", "citee"))),
+#'       citation = list(
+#'         df = data.frame(citer = 1:5, citee = 6:10),
+#'         keys = list(c("citer", "citee"))
+#'       ),
 #'       article = list(df = data.frame(article = 1:10), keys = list("article"))
 #'     ),
 #'     c("citer", "citee", "article")
@@ -306,7 +309,7 @@ rename_attrs.database <- function(x, names, ...) {
       ref
     }
   )
-  database(
+  database_nocheck(
     new_subrels,
     new_refs
   )
@@ -435,8 +438,24 @@ c.database <- function(...) {
 }
 
 #' @exportS3Method
-insert.database <- function(x, vals, relations = names(x), all = FALSE, ...) {
-  new_subrelations <- insert(subrelations(x), vals, relations, all, ...)
+insert.database <- function(
+  x,
+  vals,
+  relations = names(x),
+  all = FALSE,
+  keep_rownames = FALSE,
+  digits = getOption("digits"),
+  ...
+) {
+  new_subrelations <- insert(
+    subrelations(x),
+    vals,
+    relations,
+    all,
+    keep_rownames = keep_rownames,
+    digits = digits,
+    ...
+  )
   dfs <- records(new_subrelations)
   reference_checks <- reference_errors(dfs, references(x))
   if (length(reference_checks)) {
@@ -468,7 +487,7 @@ insert.database <- function(x, vals, relations = names(x), all = FALSE, ...) {
     names(x),
     names(new_relations)
   )
-  database(new_relations, kept_rels)
+  database_nocheck(new_relations, kept_rels)
 }
 
 #' @export

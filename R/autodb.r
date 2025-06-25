@@ -9,6 +9,11 @@
 #' dependencies, the accuracy in `discover` is fixed as 1.
 #'
 #' @param df a data.frame, containing the data to be normalised.
+#' @param keep_rownames  a logical or a string, indicating whether to include the
+#'   row names as a column. If a string is given, it is used as the name for the
+#'   column, otherwise the column is named "row". Like with the other column
+#'   names, the function returns an error if this results in duplicate column
+#'   names. Set to FALSE by default.
 #' @param digits a positive integer, indicating how many significant digits are
 #'   to be used for numeric and complex variables. This is used for both
 #'   pre-formatting in \code{\link{discover}}, and for rounding the data before
@@ -50,6 +55,7 @@
 #' @export
 autodb <- function(
   df,
+  keep_rownames = FALSE,
   digits = getOption("digits"),
   single_ref = FALSE,
   ensure_lossless = TRUE,
@@ -60,35 +66,56 @@ autodb <- function(
   ...
 ) {
   report <- reporter(progress, progress_file)
-  if (!is.na(digits))
-    report$exp(
-      df[] <- lapply(df, coarsen_if_float, digits = digits),
-      paste("coarsening numerical/complex variables to", digits, "significant digits")
-    )
-  discover(df, 1, digits = digits, progress = progress, progress_file = "", ...) |>
-    report$op(
-      normalise,
-      "normalising",
-      single_ref = single_ref,
-      ensure_lossless = ensure_lossless,
-      reduce_attributes = FALSE,
-      remove_avoidable = remove_avoidable,
-      constants_name = constants_name
-    ) |>
-    report$op(decompose, "decomposing", df = df)
+  if (!is.na(digits)) {
+    report(paste(
+      "coarsening numerical/complex variables to",
+      digits,
+      "significant digits"
+    ))
+    df <- df_coarsen(df, digits)
+  }
+  if (!isFALSE(keep_rownames)) {
+    nm <- if (isTRUE(keep_rownames)) "row" else keep_rownames[[1]]
+    df <- cbind(stats::setNames(data.frame(rownames(df)), nm), df)
+  }
+  fds <- discover(
+    df,
+    digits = NA,
+    progress = progress,
+    progress_file = progress_file,
+    ...
+  )
+  report("normalising")
+  ds <- normalise(
+    fds,
+    single_ref = single_ref,
+    ensure_lossless = ensure_lossless,
+    reduce_attributes = FALSE,
+    remove_avoidable = remove_avoidable,
+    constants_name = constants_name
+  )
+  report("decomposing")
+  decompose(df, ds, keep_rownames = FALSE, digits = NA, check = FALSE)
+}
+
+df_coarsen <- function(x, digits) {
+  x[] <- lapply(x, coarsen_if_float, digits)
+  x
 }
 
 # like format_if_float for discover(), but keeping the original class
 # "NA" -> NA to prevent "NAs introduced by coercion" warning
 coarsen_if_float <- function(x, digits) {
+  if (is.na(digits))
+    return(x)
   if (inherits(x, "numeric")) {
     nas <- is.na(x)
-    x[!nas] <- as.numeric(format(x[!nas], digits = digits, scientific = FALSE))
+    x[!nas] <- as.numeric(format(x[!nas], digits = digits, scientific = TRUE))
     return(x)
   }
   if (inherits(x, "complex")) {
     nas <- is.na(x)
-    x[!nas] <- as.complex(format(x[!nas], digits = digits, scientific = FALSE))
+    x[!nas] <- as.complex(format(x[!nas], digits = digits, scientific = TRUE))
     return(x)
   }
   x

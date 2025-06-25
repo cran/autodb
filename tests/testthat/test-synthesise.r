@@ -84,6 +84,20 @@ describe("synthesise", {
     )
     normalisation_permutation_invariant(list(deps, deps[c(1, 2, 4, 3)]))
 
+    deps <- functional_dependency(
+      list(
+        list(character(), "b"),
+        list(character(), "i"),
+        list(c("b", "c", "e"), "h"),
+        list(character(), "i"),
+        list(character(), "j"),
+        list(character(), "j")
+      ),
+      attrs_order = letters[1:10],
+      unique = FALSE
+    )
+    normalisation_permutation_invariant(list(deps, deps[c(3, 1, 2, 4:6)]))
+
     forall(gen_permutation, normalisation_permutation_invariant)
   })
   it("removes longer/later-attributed dependency sets if given a choce", {
@@ -481,24 +495,34 @@ describe("synthesise", {
       )))
     }
 
-    still_lossless_with_less_or_same_attributes <- function(df) {
-      flat_deps <- discover(df, 1)
+    still_lossless_with_less_or_same_attributes <- function(df, digits) {
+      flat_deps <- discover(df, digits = digits)
       schema_avoid_lossless <- autoref(synthesise(
         flat_deps,
         remove_avoidable = TRUE
       ))
 
       # schema_avoid_lossless should be lossless
-      database_avoid_lossless <- decompose(df, schema_avoid_lossless)
+      database_avoid_lossless <- decompose(df, schema_avoid_lossless, digits = digits)
       df2 <- rejoin(database_avoid_lossless)
-      expect_identical_unordered_table(df2, df)
+      if (!df_equiv(df2, df)) {
+        # can't use df_equiv with digits,
+        # because coarsening floats can result in df2 having
+        # some rows removed as duplicated after coarsening
+        df_rounded <- df_coarsen(df, digits)
+        return(expect_true(df_equiv(df2, unique(df_rounded), digits = NA)))
+      }
 
       still_lossless_with_less_or_same_attributes_dep(flat_deps)
     }
 
     forall(
-      gen_df(10, 7, remove_dup_rows = TRUE),
-      still_lossless_with_less_or_same_attributes
+      list(
+        gen_df(10, 7, remove_dup_rows = TRUE),
+        gen.element(c(7:1, NA_integer_))
+      ),
+      still_lossless_with_less_or_same_attributes,
+      curry = TRUE
     )
     forall(
       gen_flat_deps(7, 20, to = 20L),
@@ -516,11 +540,15 @@ describe("synthesise", {
         implied_flat_fds <- unlist(implied_flat_fds, recursive = FALSE)
       implied_flat_fds <- functional_dependency(implied_flat_fds, attrs_order(deps))
       dep_closures <- lapply(
-        detset(deps),
+        lapply(detset(deps), match, attrs_order(deps)),
         find_closure,
-        detset(implied_flat_fds),
-        dependant(implied_flat_fds)
-      )
+        detset_matrix(
+          lapply(detset(implied_flat_fds), match, attrs_order(deps)),
+          length(attrs_order(deps))
+        ),
+        match(dependant(implied_flat_fds), attrs_order(deps))
+      ) |>
+        lapply(\(x) attrs_order(deps)[x])
       fds_reproduced <- mapply(
         \(closure, dep) dep %in% closure,
         dep_closures,
@@ -774,14 +802,32 @@ describe("synthesised_fds", {
       expect_true(all(c(
         mapply(
           \(dets, dep) {
-            dep %in% find_closure(dets, detset(fds2), dependant(fds2))
+            dets <- match(dets, attrs_order(fds2))
+            dep <- match(dep, attrs_order(fds2))
+            dep %in% find_closure(
+              dets,
+              detset_matrix(
+                lapply(detset(fds2), match, attrs_order(fds2)),
+                length(attrs_order(fds2))
+              ),
+              match(dependant(fds2), attrs_order(fds2))
+            )
           },
           detset(fds1),
           dependant(fds1)
         ),
         mapply(
           \(dets, dep) {
-            dep %in% find_closure(dets, detset(fds1), dependant(fds1))
+            dets <- match(dets, attrs_order(fds1))
+            dep <- match(dep, attrs_order(fds1))
+            dep %in% find_closure(
+              dets,
+              detset_matrix(
+                lapply(detset(fds1), match, attrs_order(fds1)),
+                length(attrs_order(fds1))
+              ),
+              match(dependant(fds1), attrs_order(fds1))
+            )
           },
           detset(fds2),
           dependant(fds2)

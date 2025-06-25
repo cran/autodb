@@ -1,14 +1,18 @@
 describe("decompose", {
   it("returns valid databases", {
     forall(
-      gen_df(6, 7),
-      dup %>>%
-        (onRight(
-          with_args(discover, accuracy = 1) %>>%
-            normalise
-        )) %>>%
-        uncurry(decompose) %>>%
-        is_valid_database
+      list(
+        gen_df(6, 7),
+        gen.choice(gen.element(7:1), gen.pure(NA_integer_)),
+        gen.element(c(FALSE, TRUE))
+      ),
+      \(x, digits, check) {
+        fds <- discover(x, digits = digits)
+        schema <- normalise(fds)
+        db <- decompose(x, schema, digits = digits, check = check)
+        is_valid_database(db)
+      },
+      curry = TRUE
     )
   })
   it("removes extraneous dependencies", {
@@ -154,7 +158,7 @@ describe("decompose", {
       df2
     }
     gen_fd_reduction_for_df <- function(df) {
-      true_fds <- discover(df, 1)
+      true_fds <- discover(df)
       nonempty_detsets <- which(lengths(detset(true_fds)) > 0L)
       if (length(nonempty_detsets) == 0)
         return(gen.pure(list(df, NULL, NULL)))
@@ -171,21 +175,38 @@ describe("decompose", {
     expect_decompose_error <- function(df, reduced_fd, removed_det) {
       if (nrow(df) <= 1)
         discard()
-      flat_deps <- discover(df, 1)
+      flat_deps <- discover(df)
       reduced_index <- match(reduced_fd, flat_deps)
       if (is.na(reduced_index))
         stop("reduced_fd doesn't exist")
-      reduced_deps <- unclass(flat_deps)
-      reduced_deps[[reduced_index]][[1]] <-
-        reduced_deps[[reduced_index]][[1]][-removed_det]
-      reduced_deps <- functional_dependency(reduced_deps, attrs_order(flat_deps))
+      reduced_deps <- flat_deps
+      detset(reduced_deps)[[reduced_index]] <-
+        detset(reduced_deps)[[reduced_index]][-removed_det]
       schema <- normalise(reduced_deps)
       expect_error(
-        decompose(df, schema),
+        decompose(df, schema, check = TRUE),
         paste0(
           "\\A",
           "df doesn't satisfy functional dependencies in schema:",
           "(\\n\\{.*\\} -> .*)+",
+          "\\Z"
+        ),
+        perl = TRUE
+      )
+      element_regex <- ".+\\.\\{[^}]*\\}"
+      expect_error(
+        decompose(df, schema, check = FALSE),
+        paste0(
+          "\\A",
+          "relations must satisfy their keys:",
+          " element",
+          paste0(
+            "(",
+            " ", element_regex,
+            "|",
+            "s ", element_regex, "(, ", element_regex, ")*",
+            ")"
+          ),
           "\\Z"
         ),
         perl = TRUE
@@ -205,7 +226,7 @@ describe("decompose", {
       df
     }
     gen_fk_reduction_for_df <- function(df) {
-      true_dbs <- normalise(discover(df, 1))
+      true_dbs <- normalise(discover(df))
       true_fks <- references(true_dbs)
       true_fk_key_switch <- lapply(
         true_fks,
@@ -275,7 +296,7 @@ describe("decompose", {
         "\\.\\{", name_regexp, "(, ", name_regexp, ")*\\}"
       )
       expect_error(
-        decompose(df, dbs),
+        decompose(df, dbs, check = TRUE),
         paste0(
           "\\A",
           "relations must satisfy references in schema:",
@@ -294,17 +315,51 @@ describe("decompose", {
   })
   it("is equivalent to create >> insert for valid data", {
     forall(
-      gen_df(6, 7, remove_dup_rows = TRUE) |>
-        gen.with(\(df) {
+      list(
+        gen_df(6, 7, remove_dup_rows = TRUE),
+        gen.element(c(7:1, NA)),
+        gen.element(c(FALSE, TRUE))
+      ) |>
+        gen.with(uncurry(\(df, digits, check) {
           list(
             df = df,
-            schema = normalise(discover(df, 1), remove_avoidable = TRUE)
+            schema = normalise(
+              discover(df, digits = digits),
+              remove_avoidable = TRUE
+            ),
+            digits = digits,
+            check = check
           )
-        }),
-      \(df, schema) {
+        })),
+      \(df, schema, digits, check) {
         expect_identical(
-          decompose(df, schema),
-          create(schema) |> insert(df)
+          decompose(df, schema, digits = digits,  check = check),
+          create(schema) |> insert(df, digits = digits)
+        )
+      },
+      curry = TRUE
+    )
+    forall(
+      list(
+        gen_df(6, 7, remove_dup_rows = TRUE),
+        gen.element(c(7:1, NA)),
+        gen.element(c(FALSE, TRUE))
+      ) |>
+        gen.with(uncurry(\(df, digits, check) {
+          list(
+            df = df,
+            schema = normalise(
+              discover(df, keep_rownames = TRUE, digits = digits),
+              remove_avoidable = TRUE
+            ),
+            digits = digits,
+            check = check
+          )
+        })),
+      \(df, schema, digits, check) {
+        expect_identical(
+          decompose(df, schema, keep_rownames = TRUE, digits = digits,  check = check),
+          create(schema) |> insert(df, keep_rownames = TRUE, digits = digits)
         )
       },
       curry = TRUE
@@ -434,15 +489,22 @@ describe("decompose", {
 describe("create_insert", {
   it("is equivalent to create >> insert", {
     forall(
-      gen_df(6, 7, remove_dup_rows = TRUE) |>
-        gen.with(\(df) list(
+      list(
+        gen_df(6, 7, remove_dup_rows = TRUE),
+        gen.element(c(7:1, NA_integer_))
+      ) |>
+        gen.with(uncurry(\(df, digits) list(
           df = df,
-          schema = synthesise(discover(df, 1))
-        )),
-      expect_biidentical(
-        uncurry(create_insert),
-        onRight(create) %>>% rev %>>% uncurry(insert)
-      )
+          schema = synthesise(discover(df, digits = digits)),
+          digits = digits
+        ))),
+      \(df, schema, digits) {
+        expect_identical(
+          create_insert(df, schema, digits = digits),
+          insert(create(schema), df, digits = digits)
+        )
+      },
+      curry = TRUE
     )
   })
 })

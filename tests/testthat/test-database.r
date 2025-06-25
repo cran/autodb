@@ -264,7 +264,7 @@ describe("database", {
     )
     # FDs: acd -> b, ab -> d, bd -> a if numbers were represented exactly,
     # ad -> b, b -> d when using 15 significant digits
-    fds <- discover(x, 1, digits = 15)
+    fds <- discover(x, digits = 15)
     expect_setequal(
       fds,
       functional_dependency(
@@ -275,7 +275,7 @@ describe("database", {
         names(x)
       )
     )
-    fds_simple <- discover(x, 1, digits = 8)
+    fds_simple <- discover(x, digits = 8)
     expect_setequal(
       fds_simple,
       functional_dependency(
@@ -290,9 +290,9 @@ describe("database", {
     # 3NF schema: abcd[acd].{ab} -> ab[ab,bd].{ab} if exact,
     # abd[ad].{b} -> bd[b].{b}, abc[abc].{b} -> b.{b} for 15 sig. digits
     x_sig <- x
-    x_sig[2:4] <- lapply(x_sig[2:4], format, digit = 15) |> lapply(as.numeric)
+    x_sig[2:4] <- lapply(x_sig[2:4], format, digits = 15) |> lapply(as.numeric)
     ds <- normalise(fds, remove_avoidable = TRUE)
-    rel <- subschemas(ds) |> create() |> insert(x_sig)
+    rel <- subschemas(ds) |> create() |> insert(x_sig, digits = 15)
     refs <- references(ds)
     expect_setequal(
       refs,
@@ -1179,6 +1179,24 @@ describe("database", {
           )
         )
       }
+    )
+  })
+  it("expects new attribute names to be unique", {
+    expect_error(
+      rename_attrs(
+        database(
+          relation(
+            list(X = list(
+              df = data.frame(a = logical(), b = logical()),
+              keys = list(character())
+            )),
+            c("a", "b")
+          ),
+          list()
+        ),
+        c("c", "c")
+      ),
+      "^attrs_order must be unique: duplicated c$"
     )
   })
 

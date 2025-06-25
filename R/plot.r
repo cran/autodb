@@ -68,19 +68,19 @@
 #'   DiagrammeR::grViz(txt_db)
 #' }
 #' # simple relation schemas
-#' rschema <- synthesise(discover(ChickWeight, 1))
+#' rschema <- synthesise(discover(ChickWeight))
 #' txt_rschema <- gv(rschema)
 #' cat(txt_rschema)
 #' if (requireNamespace("DiagrammeR", quietly = TRUE)) {
 #'   DiagrammeR::grViz(txt_rschema)
 #' }
 #' # simple database schema
-#' dschema <- normalise(discover(ChickWeight, 1))
+#' dschema <- normalise(discover(ChickWeight))
 #' txt_dschema <- gv(dschema)
 #' cat(txt_dschema)
 #' DiagrammeR::grViz(txt_dschema)
 #' # simple relations
-#' rel <- create(synthesise(discover(ChickWeight, 1)))
+#' rel <- create(synthesise(discover(ChickWeight)))
 #' txt_rel <- gv(rel)
 #' cat(txt_rel)
 #' if (requireNamespace("DiagrammeR", quietly = TRUE)) {
@@ -119,11 +119,16 @@ gv.database <- function(x, name = NA_character_, ...) {
   setup_string <- gv_setup_string(name)
   df_strings <- mapply(
     relation_string,
-    df = records(x_elemented),
-    df_labelled = records(x_labelled),
-    df_keys = keys(x_elemented),
-    df_name = names(x_elemented),
-    df_label = names(x_labelled),
+    attrs = attrs(x_elemented),
+    attr_labels = attrs(x_labelled),
+    keys = keys(x_elemented),
+    name = names(x_elemented),
+    label = names(x_labelled),
+    classes = lapply(
+      records(x_elemented),
+      \(df) vapply(df, \(a) class(a)[[1]], character(1))
+    ),
+    nrow = lapply(records(x_elemented), nrow),
     row_name = "record"
   ) |>
     paste(collapse = "\n")
@@ -165,11 +170,16 @@ gv.relation <- function(x, name = NA_character_, ...) {
   setup_string <- gv_setup_string(name)
   df_strings <- mapply(
     relation_string,
-    df = records(x_elemented),
-    df_labelled = records(x_labelled),
-    df_keys = keys(x_elemented),
-    df_name = names(x_elemented),
-    df_label = names(x_labelled)
+    attrs = attrs(x_elemented),
+    attr_labels = attrs(x_labelled),
+    keys = keys(x_elemented),
+    name = names(x_elemented),
+    label = names(x_labelled),
+    classes = lapply(
+      records(x_elemented),
+      \(df) vapply(df, \(a) class(a)[[1]], character(1))
+    ),
+    nrow = lapply(records(x_elemented), nrow)
   ) |>
     paste(collapse = "\n")
   teardown_string <- "}\n"
@@ -215,8 +225,8 @@ gv.database_schema <- function(x, name = NA_character_, ...) {
     attrs = attrs(x_elemented),
     attr_labels = attrs(x_labelled),
     keys = keys(x_elemented),
-    relation_name = names(x_elemented),
-    rel_label = names(x_labelled)
+    name = names(x_elemented),
+    label = names(x_labelled)
   ) |>
     paste(collapse = "\n")
   reference_strings <- reference_strings(x_labelled)
@@ -262,8 +272,8 @@ gv.relation_schema <- function(x, name = NA_character_, ...) {
     attrs = attrs(x_elemented),
     attr_labels = attrs(x_labelled),
     keys = keys(x_elemented),
-    relation_name = names(x_elemented),
-    rel_label = names(x_labelled)
+    name = names(x_elemented),
+    label = names(x_labelled)
   ) |>
     paste(collapse = "\n")
   teardown_string <- "}\n"
@@ -304,11 +314,13 @@ gv.data.frame <- function(x, name = NA_character_, ...) {
   x_labelled <- x
   names(x_labelled) <- to_attr_name(names(x))
   table_string <- relation_string(
-    df = stats::setNames(x, to_element_name(names(x))),
-    df_labelled = x_labelled,
-    df_keys = list(),
-    df_name = to_element_name(name),
-    df_label = to_node_name(name),
+    attrs = to_element_name(names(x)),
+    attr_labels = colnames(x_labelled),
+    keys = list(),
+    name = to_element_name(name),
+    label = to_node_name(name),
+    classes = vapply(x, \(a) class(a)[[1]], character(1)),
+    nrow = nrow(x),
     row_name = "row"
   )
   teardown_string <- "}\n"
@@ -332,16 +344,29 @@ gv_setup_string <- function(df_name) {
   )
 }
 
-relation_string <- function(df, df_labelled, df_keys, df_name, df_label, row_name = c("record", "row")) {
+relation_string <- function(
+  attrs,
+  attr_labels,
+  keys,
+  name,
+  label,
+  classes,
+  nrow,
+  row_name = c("record", "row")
+) {
   row_name <- match.arg(row_name)
-  col_classes <- vapply(df, \(a) class(a)[[1]], character(1))
 
-  columns_string <- columns_string(colnames(df), colnames(df_labelled), df_keys, col_classes)
-  label <- paste0(
-    "    <TR><TD COLSPAN=\"", length(df_keys) + 2, "\">",
-    df_name,
+  columns_string <- columns_string(
+    attrs,
+    attr_labels,
+    keys,
+    classes
+  )
+  columns_label <- paste0(
+    "    <TR><TD COLSPAN=\"", length(keys) + 2, "\">",
+    name,
     " (",
-    with_number(nrow(df), row_name, "", "s"),
+    with_number(nrow, row_name, "", "s"),
     ")",
     "</TD></TR>",
     "\n",
@@ -349,37 +374,43 @@ relation_string <- function(df, df_labelled, df_keys, df_name, df_label, row_nam
   )
   paste0(
     "  ",
-    df_label,
+    label,
     " ",
     "[label = <",
     "\n",
     "    ",
     "<TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">",
     "\n",
-    label,
+    columns_label,
     "\n    </TABLE>>];"
   )
 }
 
-relation_schema_string <- function(attrs, attr_labels, keys, relation_name, rel_label) {
+relation_schema_string <- function(
+  attrs,
+  attr_labels,
+  keys,
+  name,
+  label
+) {
   columns_string <- columns_schema_string(attrs, attr_labels, keys)
-  label <- paste0(
+  columns_label <- paste0(
     "    <TR><TD COLSPAN=\"", length(keys) + 1, "\">",
-    relation_name,
+    name,
     "</TD></TR>",
     "\n",
     columns_string
   )
   paste0(
     "  ",
-    rel_label,
+    label,
     " ",
     "[label = <",
     "\n",
     "    ",
     "<TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">",
     "\n",
-    label,
+    columns_label,
     "\n    </TABLE>>];"
   )
 }

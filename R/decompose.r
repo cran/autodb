@@ -15,54 +15,85 @@
 #' @param df a data.frame, containing the data to be normalised.
 #' @param schema a database schema with foreign key references, such as given by
 #'   \code{\link{autoref}}.
+#' @param keep_rownames  a logical or a string, indicating whether to include the
+#'   row names as a column. If a string is given, it is used as the name for the
+#'   column, otherwise the column is named "row". Set to FALSE by default.
+#' @param digits a positive integer, indicating how many significant digits are
+#'   to be used for numeric and complex variables. A value of \code{NA} results
+#'   in no rounding. By default, this uses \code{getOption("digits")}, similarly
+#'   to \code{\link{format}}. See the "Floating-point variables" section for
+#'   \code{\link{discover}} for why this rounding is necessary for consistent
+#'   results across different machines. See the note in
+#'   \code{\link{print.default}} about \code{digits >= 16}.
+#' @param check a logical, indicating whether to check that \code{df} satisfies
+#'   the functional dependencies enforced by \code{schema} before creating the
+#'   result. This can find key violations without spending time creating the
+#'   result first, but is redundant if \code{df} was used to create
+#'   \code{schema} in the first place.
 #'
 #' @return A \code{\link{database}} object, containing the data in \code{df}
 #'   within the database schema given in \code{schema}.
 #' @export
-decompose <- function(df, schema) {
+decompose <- function(
+  df,
+  schema,
+  keep_rownames = FALSE,
+  digits = getOption("digits"),
+  check = TRUE
+) {
   stopifnot(!anyDuplicated(names(schema)))
+
+  if (!isFALSE(keep_rownames)) {
+    nm <- if (isTRUE(keep_rownames)) "row" else keep_rownames[[1]]
+    df <- cbind(stats::setNames(data.frame(rownames(df)), nm), df)
+  }
   stopifnot(identical(names(df), attrs_order(schema)))
 
-  inferred_fds <- synthesised_fds(attrs(schema), keys(schema))
-  if (length(inferred_fds) > 0L)
-    inferred_fds <- unlist(inferred_fds, recursive = FALSE)
-  check_fd <- function(df, fd) {
-    both_proj <- df_unique(df[, unlist(fd), drop = FALSE])
-    key_proj <- df_unique(both_proj[, fd[[1]], drop = FALSE])
-    nrow(key_proj) == nrow(both_proj)
-  }
-  fds_satisfied <- vapply(
-    inferred_fds,
-    check_fd,
-    logical(1L),
-    df = df
-  )
-  if (!all(fds_satisfied)) {
-    stop(paste(
-      "df doesn't satisfy functional dependencies in schema:",
-      paste(
-        vapply(
-          inferred_fds[!fds_satisfied],
-          \(fd) paste0("{", toString(fd[[1]]), "} -> ", fd[[2]]),
-          character(1)
+  if (!is.na(digits))
+    df <- df_coarsen(df, digits)
+
+  if (check) {
+    inferred_fds <- synthesised_fds(attrs(schema), keys(schema))
+    if (length(inferred_fds) > 0L)
+      inferred_fds <- unlist(inferred_fds, recursive = FALSE)
+    check_fd <- function(df, fd) {
+      both_proj <- df_unique(df[, unlist(fd), drop = FALSE])
+      key_proj <- df_unique(both_proj[, fd[[1]], drop = FALSE])
+      nrow(key_proj) == nrow(both_proj)
+    }
+    fds_satisfied <- vapply(
+      inferred_fds,
+      check_fd,
+      logical(1L),
+      df = df
+    )
+    if (!all(fds_satisfied)) {
+      stop(paste(
+        "df doesn't satisfy functional dependencies in schema:",
+        paste(
+          vapply(
+            inferred_fds[!fds_satisfied],
+            \(fd) paste0("{", toString(fd[[1]]), "} -> ", fd[[2]]),
+            character(1)
+          ),
+          collapse = "\n"
         ),
-        collapse = "\n"
-      ),
-      sep = "\n"
-    ))
+        sep = "\n"
+      ))
+    }
   }
 
-  create_insert(df, schema) |>
+  create_insert(df, schema, digits = digits) |>
     database(references(schema))
 }
 
-create_insert <- function(df, schema) {
+create_insert <- function(df, schema, digits = getOption("digits")) {
+  if (!is.na(digits))
+    df <- df_coarsen(df, digits)
   relations <- stats::setNames(
     Map(
       \(attrs, keys) {
         list(
-          # conditional needed to handle 0-attrs case,
-          # i.e. decomposing to table_dum and table_dee
           df = df_unique(df[, attrs, drop = FALSE]),
           keys = keys
         )
