@@ -1037,3 +1037,170 @@ describe("gv", {
     })
   })
 })
+
+describe("d2", {
+  describe("relation_schema", {
+    it("expects non-empty relation schema names", {
+      forall(
+        gen_df(6, 7),
+        \(df) {
+          rs <- subschemas(normalise(discover(df)))
+          if (length(rs) == 0)
+            discard()
+          attr(rs, "names")[[1]] <- "" # skip schema name guard
+          expect_error(
+            d2(rs),
+            "^relation schema names can not be zero characters in length$"
+          )
+        }
+      )
+    })
+    it("works for synthesise outputs", {
+      forall(
+        gen_flat_deps(7, 20, to = 20L),
+        synthesise %>>% d2 %>>% expect_errorless
+      )
+    })
+    it("works for generated cases", {
+      forall(
+        gen.relation_schema(letters[1:8], 0, 10),
+        d2 %>>% expect_errorless
+      )
+    })
+    it("works for degenerate cases", {
+      table_dum <- data.frame()
+      table_dee <- data.frame(a = 1)[, -1, drop = FALSE]
+      schema_dum <- synthesise(discover(table_dum))
+      schema_dee <- synthesise(discover(table_dee))
+      expect_errorless(d2(schema_dum))
+      expect_errorless(d2(schema_dee))
+    })
+    it("leaves attribute/df names as-is (i.e. no snake case conversion)", {
+      schema <- relation_schema(
+        list(
+          `Genre ID` = list(
+            c("Genre ID", "Genre Name"),
+            list("Genre ID")
+          )
+        ),
+        c("Genre ID", "Genre Name")
+      )
+      expected_string <- paste(
+        "\"Genre ID\": {",
+        "  shape: sql_table",
+        "  \"Genre ID\"",
+        "  \"Genre Name\"",
+        "}",
+        "",
+        sep = "\n"
+      )
+      expect_identical(
+        d2(schema),
+        expected_string
+      )
+    })
+    it("leaves relation/attribute names as-is (no HTML escape sequences for &<>\")", {
+      rs <- relation_schema(
+        list(`<rel&1>` = list(c("a<1 & b>2", "d"), list("a<1 & b>2"))),
+        c("a<1 & b>2", "d")
+      )
+      expect_identical(
+        d2(rs),
+        paste(
+          '"<rel&1>": {',
+          "  shape: sql_table",
+          '  "a<1 & b>2"',
+          '  "d"',
+          "}",
+          "",
+          sep = "\n"
+        )
+      )
+    })
+  })
+  describe("data.frame", {
+    it("expects name to be non-empty", {
+      df <- data.frame(a = 1:3)
+      expect_error(d2(df, ""), "^name must be non-empty$")
+    })
+    it("expects a length-one character name", {
+      forall(
+        gen_df(4, 6),
+        \(df) expect_error(d2(df, c("a", "b")))
+      )
+    })
+    it("works for degenerate cases", {
+      table_dum <- data.frame()
+      table_dee <- data.frame(a = 1)[, -1, drop = FALSE]
+      expect_errorless(d2(table_dum, "table_dum"))
+      expect_errorless(d2(table_dee, "table_dee"))
+    })
+    it("works for generated cases", {
+      forall(
+        list(gen_df(6, 7), gen_attr_name(5)),
+        d2 %>>% expect_errorless,
+        curry = TRUE
+      )
+      forall(
+        gen_df(6, 7),
+        d2 %>>% expect_errorless
+      )
+    })
+    it("generates a name if not given one", {
+      df <- data.frame(a = 1:3)
+      g <- strsplit(d2(df), "\n", fixed = TRUE)[[1]]
+      expect_identical(g[[1]], "\"data\": {")
+    })
+    it("creates a d2 expression for the data.frame", {
+      df <- data.frame(
+        a = 1:2, b = letters[1:2]
+      )
+      expect_identical(
+        d2(df, "table"),
+        paste(
+          "\"table\": {",
+          "  shape: sql_table",
+          "  \"a\": integer",
+          "  \"b\": character",
+          "}",
+          "",
+          sep = "\n"
+        )
+      )
+    })
+    it("uses attribute/df names as-is (no snake case, no HTML escape sequences for &<>\", etc)", {
+      df <- data.frame(
+        a = 1:2, b = letters[1:2]
+      ) |>
+        stats::setNames(c("A 1", "b.2"))
+      expect_identical(
+        d2(df, "Table Test"),
+        paste(
+          "\"Table Test\": {",
+          "  shape: sql_table",
+          "  \"A 1\": integer",
+          "  \"b.2\": character",
+          "}",
+          "",
+          sep = "\n"
+        )
+      )
+      df <- data.frame(
+        a = 1:2, b = letters[1:2]
+      ) |>
+        stats::setNames(c("a", "b<2 & c>3"))
+      expect_identical(
+        d2(df, "Table Test"),
+        paste(
+          "\"Table Test\": {",
+          "  shape: sql_table",
+          "  \"a\": integer",
+          "  \"b<2 & c>3\": character",
+          "}",
+          "",
+          sep = "\n"
+        )
+      )
+    })
+  })
+})

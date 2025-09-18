@@ -1,3 +1,10 @@
+# autodb 3.1.0
+
+## Improvements
+
+* Changed `autoref` (and `normalise`) to spend less time removing extraneous references.
+* Changed `autodb` (and optionally `database`) to not check foreign key references.
+
 # autodb 3.0.0
 
 ## Breaking changes

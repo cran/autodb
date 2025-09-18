@@ -1,6 +1,6 @@
 Package: autodb
 Title: Automatic Database Normalisation for Data Frames
-Version: 3.0.0
+Version: 3.1.0
 Authors@R: 
     person(
       "Mark",
@@ -33,9 +33,9 @@ URL: https://charnelmouse.github.io/autodb/,
         https://github.com/CharnelMouse/autodb
 BugReports: https://github.com/CharnelMouse/autodb/issues
 NeedsCompilation: no
-Packaged: 2025-06-25 21:20:15 UTC; Mark
+Packaged: 2025-09-18 07:46:32 UTC; Mark
 Author: Mark Webster [aut, cre] (ORCID:
     <https://orcid.org/0000-0002-3351-0686>)
 Maintainer: Mark Webster <markwebster204@yahoo.co.uk>
 Repository: CRAN
-Date/Publication: 2025-06-25 21:40:02 UTC
+Date/Publication: 2025-09-18 08:10:07 UTC
