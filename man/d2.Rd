@@ -65,14 +65,13 @@ single data frame's name. In the future, this will be used to give a name to
 the generated board, to make use of D2's composition features.
 }
 \examples{
-\dontrun{
 # simple data.frame example
 cat(d2(ChickWeight, "chick"))
 }
-}
 \seealso{
-\code{\link{d2.data.frame}} and \code{\link{d2.relation_schema}} for
-individual methods.
+\code{\link{d2.data.frame}}, \code{\link{d2.relation_schema}},
+\code{\link{d2.database_schema}}, \code{\link{d2.relation}}, and
+\code{\link{d2.database}} for individual methods.
 
 D2 language site: \url{https://d2lang.com}
 

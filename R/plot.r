@@ -145,8 +145,9 @@ gv <- function(x, name = NA_character_, ...) {
 #' @param ... further arguments passed to or from other methods.
 #'
 #' @return A scalar character, containing text input for D2.
-#' @seealso \code{\link{d2.data.frame}} and \code{\link{d2.relation_schema}} for
-#'   individual methods.
+#' @seealso \code{\link{d2.data.frame}}, \code{\link{d2.relation_schema}},
+#'   \code{\link{d2.database_schema}}, \code{\link{d2.relation}}, and
+#'   \code{\link{d2.database}} for individual methods.
 #'
 #' D2 language site: \url{https://d2lang.com}
 #'
@@ -155,10 +156,9 @@ gv <- function(x, name = NA_character_, ...) {
 #'
 #' Quarto extension: \url{https://github.com/data-intuitive/quarto-d2}
 #' @examples
-#' \dontrun{
 #' # simple data.frame example
 #' cat(d2(ChickWeight, "chick"))
-#' }
+#' @export
 d2 <- function(x, ...) {
   UseMethod("d2", x)
 }
@@ -189,7 +189,7 @@ gv.database <- function(x, name = NA_character_, ...) {
   x_labelled <- to_labelled(x)
   x_elemented <- to_elemented(x)
   setup_string <- setup_string_gv(name)
-  df_strings <- mapply(
+  df_strings <- Map(
     relation_string_gv,
     attrs = attrs(x_elemented),
     attr_labels = attrs(x_labelled),
@@ -203,17 +203,106 @@ gv.database <- function(x, name = NA_character_, ...) {
     nrow = lapply(records(x_elemented), nrow),
     row_name = "record"
   ) |>
-    paste(collapse = "\n")
-  reference_strings <- reference_strings(x_labelled)
-  teardown_string <- "}\n"
+    Reduce(f = c, init = character())
+  reference_strings <- reference_strings_gv(x_labelled)
+  teardown_string <- c("}", "")
   paste(
-    setup_string,
-    "",
-    df_strings,
-    "",
-    reference_strings,
-    teardown_string,
-    sep = "\n"
+    c(
+      setup_string,
+      if (length(df_strings > 0))
+        c("", indent(df_strings)),
+      if (length(reference_strings) > 0)
+        c("", indent(reference_strings)),
+      teardown_string
+    ),
+    collapse = "\n"
+  )
+}
+
+#' Generate D2 input text to plot databases
+#'
+#' Produces text input for D2 to make a diagram of a given database, usually
+#' rendered with SVG.
+#'
+#' Each relation in the database is presented as a set of rows, one for each
+#' attribute in the relation. These rows include information about the attribute
+#' classes.
+#'
+#' Any foreign key references are represented by arrows between either the
+#' attribute pairs or the relation pairs, depending on the value of
+#' \code{reference_level}. This allows the output to be geared towards a
+#' specific layout engine. Of the engines currently available for D2, Dagre can
+#' not plot references between relation attributes, just the attributes
+#' themselves, so using \code{reference_level = "relation"} prevents compound
+#' foreign keys resulting in duplicate reference arrows. ELK and Tala
+#' can plot between relation attributes, so the default \code{reference_level =
+#' "attr"} works as intended.
+#'
+#' @param x a \code{\link{database}}.
+#' @param name a character scalar, giving the name of the schema, if any.
+#' @param reference_level a character scalar, indicating the format to use for
+#'   foreign key references. "relation" only specifies the relations involved;
+#'   "attr" also specifies the attributes involved, one pair at a time.
+#' @inheritParams d2
+#'
+#' @return A scalar character, containing text input for D2.
+#' @seealso The generic \code{\link{d2}}.
+#' @exportS3Method
+d2.database <- function(
+  x,
+  name = NA_character_,
+  reference_level = c("attr", "relation"),
+  ...
+) {
+  if (any(names(x) == ""))
+    stop("relation names can not be zero characters in length")
+  if (!is.character(name) || length(name) != 1)
+    stop("name must be a length-one character")
+  reference_level <- match.arg(reference_level)
+  x_labelled <- to_quoted(x)
+  x_elemented <- to_quoted(x)
+  setup_string <- "direction: right"
+  df_strings <- Map(
+    relation_string_d2,
+    attrs = attrs(x_elemented),
+    attr_labels = attrs(x_labelled),
+    keys = keys(x_elemented),
+    name = names(x),
+    label = names(x_labelled),
+    classes = lapply(
+      records(x_elemented),
+      \(df) vapply(df, \(a) class(a)[[1]], character(1))
+    ),
+    nrow = lapply(records(x_elemented), nrow),
+    references = lapply(
+      names(x_labelled),
+      \(label) Filter(\(ref) ref[[1]] == label, references(x_labelled))
+    )
+  ) |>
+    Reduce(f = c, init = character())
+  reference_strings <- reference_strings_d2(x_labelled, reference_level)
+  teardown_string <- ""
+  full_text <- if (is.na(name))
+    c(
+      setup_string,
+      df_strings,
+      if (length(reference_strings) > 0)
+        c("", reference_strings),
+      teardown_string
+    )
+  else
+    c(
+      setup_string,
+      paste0(to_quoted_name(name), " {"),
+      indent(df_strings),
+      if (length(reference_strings) > 0)
+        c("", indent(reference_strings)),
+      "}",
+      teardown_string
+    )
+  paste(
+    full_text,
+    collapse = "\n"
   )
 }
 
@@ -240,7 +329,7 @@ gv.relation <- function(x, name = NA_character_, ...) {
   x_labelled <- to_labelled(x)
   x_elemented <- to_elemented(x)
   setup_string <- setup_string_gv(name)
-  df_strings <- mapply(
+  df_strings <- Map(
     relation_string_gv,
     attrs = attrs(x_elemented),
     attr_labels = attrs(x_labelled),
@@ -253,14 +342,76 @@ gv.relation <- function(x, name = NA_character_, ...) {
     ),
     nrow = lapply(records(x_elemented), nrow)
   ) |>
-    paste(collapse = "\n")
-  teardown_string <- "}\n"
+    Reduce(f = c, init = character())
+  teardown_string <- c("}", "")
   paste(
-    setup_string,
-    "",
-    df_strings,
-    teardown_string,
-    sep = "\n"
+    c(
+      setup_string,
+      if (length(df_strings > 0))
+        c("", indent(df_strings)),
+      teardown_string
+    ),
+    collapse = "\n"
+  )
+}
+
+#' Generate D2 input text to plot relations
+#'
+#' Produces text input for D2 to make a diagram of a given relation, usually
+#' rendered with SVG.
+#'
+#' Each relation is presented as a set of rows, one for each
+#' attribute in the relation. These rows include information about the
+#' attribute classes.
+#'
+#' @param x a \code{\link{relation}}.
+#' @param name a character scalar, giving the name of the schema, if any.
+#' @inheritParams d2
+#'
+#' @return A scalar character, containing text input for D2.
+#' @seealso The generic \code{\link{d2}}.
+#' @exportS3Method
+d2.relation <- function(x, name = NA_character_, ...) {
+  if (any(names(x) == ""))
+    stop("relation names can not be zero characters in length")
+  if (!is.character(name) || length(name) != 1)
+    stop("name must be a length-one character")
+  x_labelled <- to_quoted(x)
+  x_elemented <- to_quoted(x)
+  setup_string <- "direction: right"
+  df_strings <- Map(
+    relation_string_d2,
+    attrs = attrs(x_elemented),
+    attr_labels = attrs(x_labelled),
+    keys = keys(x_elemented),
+    name = names(x),
+    label = names(x_labelled),
+    classes = lapply(
+      records(x_elemented),
+      \(df) vapply(df, \(a) class(a)[[1]], character(1))
+    ),
+    nrow = lapply(records(x_elemented), nrow),
+    MoreArgs = list(references = list())
+  ) |>
+    Reduce(f = c, init = character())
+  teardown_string <- ""
+  full_text <- if (is.na(name))
+    c(
+      setup_string,
+      df_strings,
+      teardown_string
+    )
+  else
+    c(
+      setup_string,
+      paste0(to_quoted_name(name), " {"),
+      indent(df_strings),
+      "}",
+      teardown_string
+    )
+  paste(
+    full_text,
+    collapse = "\n"
   )
 }
 
@@ -292,7 +443,7 @@ gv.database_schema <- function(x, name = NA_character_, ...) {
   x_labelled <- to_labelled(x)
   x_elemented <- to_elemented(x)
   setup_string <- setup_string_gv(name)
-  df_strings <- mapply(
+  df_strings <- Map(
     relation_schema_string,
     attrs = attrs(x_elemented),
     attr_labels = attrs(x_labelled),
@@ -300,18 +451,100 @@ gv.database_schema <- function(x, name = NA_character_, ...) {
     name = names(x_elemented),
     label = names(x_labelled)
   ) |>
-    paste(collapse = "\n")
-  reference_strings <- reference_strings(x_labelled)
-  teardown_string <- "}\n"
+    Reduce(f = c, init = character())
+  reference_strings <- reference_strings_gv(x_labelled)
+  teardown_string <- c("}", "")
   paste(
-    setup_string,
-    "",
-    df_strings,
-    "",
-    reference_strings,
-    teardown_string,
-    sep = "\n"
+    c(
+      setup_string,
+      if (length(df_strings > 0))
+        c("", indent(df_strings)),
+      if (length(reference_strings) > 0)
+        c("", indent(reference_strings)),
+      teardown_string
+    ),
+    collapse = "\n"
   )
+}
+
+#' Generate D2 input text to plot database schemas
+#'
+#' Produces text input for D2 to make a diagram of a given database schema,
+#' usually rendered with SVG.
+#'
+#' Each relation in the schema is presented as a set of rows, one for each
+#' attribute in the relation. These rows do not include information about the
+#' attribute classes.
+#'
+#' Any foreign key references are represented by arrows between either the
+#' attribute pairs or the relation pairs, depending on the value of
+#' \code{reference_level}. This allows the output to be geared towards a
+#' specific layout engine. Of the engines currently available for D2, Dagre can
+#' not plot references between relation attributes, just the attributes
+#' themselves, so using \code{reference_level = "relation"} prevents compound
+#' foreign keys resulting in duplicate reference arrows. ELK and Tala
+#' can plot between relation attributes, so the default \code{reference_level =
+#' "attr"} works as intended.
+#'
+#' @param x a database schema, as given by \code{\link{database_schema}} or
+#'   \code{\link{normalise}}.
+#' @param name a character scalar, giving the name of the schema, if any.
+#' @param reference_level a character scalar, indicating the format to use for
+#'   foreign key references. "relation" only specifies the relations involved;
+#'   "attr" also specifies the attributes involved, one pair at a time.
+#' @inheritParams d2
+#'
+#' @return A scalar character, containing text input for D2.
+#' @seealso The generic \code{\link{d2}}.
+#' @exportS3Method
+d2.database_schema <- function(
+  x,
+  name = NA_character_,
+  reference_level = c("attr", "relation"),
+  ...
+) {
+  if (any(names(x) == ""))
+    stop("relation schema names can not be zero characters in length")
+  if (!is.character(name) || length(name) != 1)
+    stop("name must be a length-one character")
+  reference_level <- match.arg(reference_level)
+  x_labelled <- to_quoted(x)
+  x_elemented <- to_quoted(x)
+  setup_string <- "direction: right"
+  df_strings <- Map(
+    relation_schema_string_d2,
+    attrs = attrs(x_elemented),
+    attr_labels = attrs(x_labelled),
+    keys = keys(x_elemented),
+    name = names(x_elemented),
+    label = names(x_labelled),
+    references = lapply(
+      names(x_labelled),
+      \(label) Filter(\(ref) ref[[1]] == label, references(x_labelled))
+    )
+  ) |>
+    Reduce(f = c, init = character())
+  reference_strings <- reference_strings_d2(x_labelled, reference_level)
+  teardown_string <- ""
+  full_text <- if (is.na(name))
+    c(
+      setup_string,
+      df_strings,
+      if (length(reference_strings) > 0)
+        c("", reference_strings),
+      teardown_string
+    )
+  else
+    c(
+      setup_string,
+      paste0(to_quoted_name(name), " {"),
+      indent(df_strings),
+      if (length(reference_strings) > 0)
+        c("", indent(reference_strings)),
+      "}",
+      teardown_string
+    )
+  paste(full_text, collapse = "\n")
 }
 
 #' Generate Graphviz input text to plot relation schemas
@@ -339,7 +572,7 @@ gv.relation_schema <- function(x, name = NA_character_, ...) {
   x_labelled <- to_labelled(x)
   x_elemented <- to_elemented(x)
   setup_string <- setup_string_gv(name)
-  df_strings <- mapply(
+  df_strings <- Map(
     relation_schema_string,
     attrs = attrs(x_elemented),
     attr_labels = attrs(x_labelled),
@@ -347,14 +580,16 @@ gv.relation_schema <- function(x, name = NA_character_, ...) {
     name = names(x_elemented),
     label = names(x_labelled)
   ) |>
-    paste(collapse = "\n")
-  teardown_string <- "}\n"
+    Reduce(f = c, init = character())
+  teardown_string <- c("}", "")
   paste(
-    setup_string,
-    "",
-    df_strings,
-    teardown_string,
-    sep = "\n"
+    c(
+      setup_string,
+      if (length(df_strings) > 0)
+        c("", indent(df_strings)),
+      teardown_string
+    ),
+    collapse = "\n"
   )
 }
 
@@ -374,26 +609,37 @@ gv.relation_schema <- function(x, name = NA_character_, ...) {
 #'
 #' @return A scalar character, containing text input for D2.
 #' @seealso The generic \code{\link{d2}}.
+#' @exportS3Method
 d2.relation_schema <- function(x, name = NA_character_, ...) {
   if (any(names(x) == ""))
     stop("relation schema names can not be zero characters in length")
-  x_labelled <- x
-  x_elemented <- x
-  df_strings <- mapply(
+  if (!is.character(name) || length(name) != 1)
+    stop("name must be a length-one character")
+  x_labelled <- to_quoted(x)
+  x_elemented <- to_quoted(x)
+  setup_string <- "direction: right"
+  df_strings <- Map(
     relation_schema_string_d2,
     attrs = attrs(x_elemented),
     attr_labels = attrs(x_labelled),
     keys = keys(x_elemented),
     name = names(x_elemented),
-    label = names(x_labelled)
+    label = names(x_labelled),
+    MoreArgs = list(references = list())
   ) |>
-    paste(collapse = "\n")
+    Reduce(f = c, init = character())
   teardown_string <- ""
-  paste(
-    df_strings,
-    teardown_string,
-    sep = "\n"
-  )
+  full_text <- if (is.na(name))
+    c(setup_string, df_strings, teardown_string)
+  else
+    c(
+      setup_string,
+      paste0(to_quoted_name(name), " {"),
+      indent(df_strings),
+      "}",
+      teardown_string
+    )
+  paste(full_text, collapse = "\n")
 }
 
 #' Generate Graphviz input text to plot a data frame
@@ -423,9 +669,11 @@ gv.data.frame <- function(x, name = NA_character_, ...) {
   setup_string <- setup_string_gv(name)
   x_labelled <- x
   names(x_labelled) <- to_attr_name(names(x))
+  x_elemented <- x
+  names(x_elemented) <- to_element_name(names(x))
   table_string <- relation_string_gv(
-    attrs = to_element_name(names(x)),
-    attr_labels = colnames(x_labelled),
+    attrs = names(x_elemented),
+    attr_labels = names(x_labelled),
     keys = list(),
     name = to_element_name(name),
     label = to_node_name(name),
@@ -433,13 +681,15 @@ gv.data.frame <- function(x, name = NA_character_, ...) {
     nrow = nrow(x),
     row_name = "row"
   )
-  teardown_string <- "}\n"
+  teardown_string <- c("}", "")
   paste(
-    setup_string,
-    "",
-    table_string,
-    teardown_string,
-    sep = "\n"
+    c(
+      setup_string,
+      "",
+      indent(table_string),
+      teardown_string
+    ),
+    collapse = "\n"
   )
 }
 
@@ -459,6 +709,7 @@ gv.data.frame <- function(x, name = NA_character_, ...) {
 #'
 #' @return A scalar character, containing text input for Graphviz.
 #' @seealso The generic \code{\link{d2}}.
+#' @exportS3Method
 d2.data.frame <- function(x, name = NA_character_, ...) {
   if (is.na(name))
     name <- "data"
@@ -468,33 +719,38 @@ d2.data.frame <- function(x, name = NA_character_, ...) {
     stop("name must be a length-one character")
 
   x_labelled <- x
-  names(x_labelled) <- names(x)
+  names(x_labelled) <- to_quoted_name(names(x))
+  x_elemented <- x
+  names(x_elemented) <- to_quoted_name(names(x))
+  setup_string <- "direction: right"
   table_string <- relation_string_d2(
-    attrs = names(x),
-    attr_labels = colnames(x_labelled),
+    attrs = names(x_elemented),
+    attr_labels = names(x_labelled),
     keys = list(),
     name = name,
-    label = paste0("\"", name, "\""),
+    label = to_quoted_name(name),
     classes = vapply(x, \(a) class(a)[[1]], character(1)),
     nrow = nrow(x),
+    references = list(),
     row_name = "row"
   )
   teardown_string <- ""
   paste(
-    table_string,
-    teardown_string,
-    sep = "\n"
+    c(setup_string, table_string, teardown_string),
+    collapse = "\n"
   )
 }
 
 setup_string_gv <- function(df_name) {
-  paste0(
-    "digraph ",
-    if (!is.na(df_name))
-      paste0(to_main_name(df_name), " "),
-    "{\n",
-    "  rankdir = \"LR\"\n",
-    "  node [shape=plaintext];"
+  c(
+    paste0(
+      "digraph ",
+      if (!is.na(df_name))
+        paste0(to_main_name(df_name), " "),
+      "{"
+    ),
+    indent("rankdir = \"LR\""),
+    indent("node [shape=plaintext];")
   )
 }
 
@@ -516,27 +772,28 @@ relation_string_gv <- function(
     keys,
     classes
   )
-  columns_label <- paste0(
-    "    <TR><TD COLSPAN=\"", length(keys) + 2, "\">",
-    name,
-    " (",
-    with_number(nrow, row_name, "", "s"),
-    ")",
-    "</TD></TR>",
-    "\n",
+  columns_label <- c(
+    paste0(
+      "<TR><TD COLSPAN=\"", length(keys) + 2, "\">",
+      name,
+      " (",
+      with_number(nrow, row_name, "", "s"),
+      ")",
+      "</TD></TR>"
+    ),
     columns_string
   )
-  paste0(
-    "  ",
-    label,
-    " ",
-    "[label = <",
-    "\n",
-    "    ",
-    "<TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">",
-    "\n",
-    columns_label,
-    "\n    </TABLE>>];"
+  c(
+    paste0(
+      label,
+      " ",
+      "[label = <"
+    ),
+    indent(paste0(
+      "<TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">"
+    )),
+    indent(columns_label),
+    indent("</TABLE>>];")
   )
 }
 
@@ -548,6 +805,7 @@ relation_string_d2 <- function(
   label,
   classes,
   nrow,
+  references,
   row_name = c("record", "row")
 ) {
   row_name <- match.arg(row_name)
@@ -556,17 +814,15 @@ relation_string_d2 <- function(
     attrs,
     attr_labels,
     keys,
-    classes
+    classes,
+    references
   )
   columns_label <- columns_string
-  paste0(
-    label,
-    ": {",
-    "\n",
-    "  shape: sql_table",
-    "\n",
-    columns_label,
-    "\n}"
+  c(
+    paste0("\"", name, "\": \"", name, " (", with_number(nrow, row_name, "", "s"), ")\" {"),
+    indent("shape: sql_table"),
+    indent(columns_label),
+    "}"
   )
 }
 
@@ -577,25 +833,26 @@ relation_schema_string <- function(
   name,
   label
 ) {
-  columns_string <- columns_schema_string(attrs, attr_labels, keys)
-  columns_label <- paste0(
-    "    <TR><TD COLSPAN=\"", length(keys) + 1, "\">",
-    name,
-    "</TD></TR>",
-    "\n",
+  columns_string <- columns_schema_string_gv(attrs, attr_labels, keys)
+  columns_label <- c(
+    paste0(
+      "<TR><TD COLSPAN=\"", length(keys) + 1, "\">",
+      name,
+      "</TD></TR>"
+    ),
     columns_string
   )
-  paste0(
-    "  ",
-    label,
-    " ",
-    "[label = <",
-    "\n",
-    "    ",
-    "<TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">",
-    "\n",
-    columns_label,
-    "\n    </TABLE>>];"
+  table_header <-
+    "<TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">"
+  c(
+    paste0(
+      label,
+      " ",
+      "[label = <"
+    ),
+    indent(table_header),
+    indent(columns_label),
+    indent("</TABLE>>];")
   )
 }
 
@@ -604,19 +861,21 @@ relation_schema_string_d2 <- function(
   attr_labels,
   keys,
   name,
-  label
+  label,
+  references
 ) {
-  columns_string <- columns_schema_string_d2(attrs, attr_labels, keys)
+  columns_string <- columns_schema_string_d2(
+    attrs,
+    attr_labels,
+    keys,
+    references
+  )
   columns_label <- columns_string
-  paste0(
-    "\"",
-    name,
-    "\": {",
-    "\n",
-    "  shape: sql_table",
-    "\n",
-    columns_label,
-    "\n}"
+  c(
+    paste0(name, ": {"),
+    indent("shape: sql_table"),
+    indent(columns_label),
+    "}"
   )
 }
 
@@ -637,7 +896,7 @@ columns_string_gv <- function(col_names, col_labels, keys, col_classes) {
     character(1)
   )
   column_typing_info <- paste0(
-    "    <TR><TD PORT=\"TO_",
+    "<TR><TD PORT=\"TO_",
     col_labels,
     "\">",
     col_names,
@@ -647,21 +906,43 @@ columns_string_gv <- function(col_names, col_labels, keys, col_classes) {
     "</TR>",
     recycle0 = TRUE
   )
-  paste(column_typing_info, collapse = "\n")
+  column_typing_info
 }
 
-columns_string_d2 <- function(col_names, col_labels, keys, col_classes) {
+columns_string_d2 <- function(col_names, col_labels, keys, col_classes, references) {
   column_typing_info <- paste0(
-    "  \"",
     col_names,
-    "\": ",
+    ": ",
     col_classes,
     recycle0 = TRUE
   )
-  paste(column_typing_info, collapse = "\n")
+  key_matches <- lapply(
+    col_labels,
+    \(label) vapply(keys, is.element, logical(1), el = label)
+  )
+  key_labels <- paste0("UNQ", seq_along(keys) - 1)
+  if (length(keys) >= 1)
+    key_labels[[1]] <- "PK"
+  key_constraints <- lapply(key_matches, \(x) key_labels[x])
+  ref_constraints <- lapply(
+    col_labels,
+    \(cl) vapply(references, \(ref) is.element(cl, ref[[2]]), logical(1))
+  ) |>
+    sapply(\(x) paste0("FK", which(x), recycle0 = TRUE))
+  all_constraints <- mapply(
+    \(x, y) paste(c(x, y), collapse = "; "),
+    key_constraints,
+    ref_constraints
+  )
+  constraint_strings <- ifelse(
+    nchar(all_constraints) == 0,
+    "",
+    paste0(" {constraint: [", all_constraints, "]}")
+  )
+  paste0(column_typing_info, constraint_strings)
 }
 
-columns_schema_string <- function(col_names, col_labels, keys) {
+columns_schema_string_gv <- function(col_names, col_labels, keys) {
   key_membership_strings <- vapply(
     col_names,
     \(nm) paste(
@@ -685,7 +966,7 @@ columns_schema_string <- function(col_names, col_labels, keys) {
     character(1)
   )
   column_typing_info <- paste0(
-    "    <TR><TD PORT=\"TO_",
+    "<TR><TD PORT=\"TO_",
     col_labels,
     "\">",
     col_names,
@@ -694,32 +975,64 @@ columns_schema_string <- function(col_names, col_labels, keys) {
     "</TR>",
     recycle0 = TRUE
   )
-  paste(column_typing_info, collapse = "\n")
+  column_typing_info
 }
 
-columns_schema_string_d2 <- function(col_names, col_labels, keys) {
-  column_typing_info <- paste0(
-    "  \"",
+columns_schema_string_d2 <- function(col_names, col_labels, keys, references) {
+  key_matches <- lapply(keys, \(k) is.element(col_labels, k)) |>
+    do.call(what = cbind)
+  key_labels <- paste0("UNQ", seq_along(keys) - 1)
+  if (length(keys) >= 1)
+    key_labels[[1]] <- "PK"
+  key_constraints <- apply(key_matches, 1, \(x) key_labels[x], simplify = FALSE)
+  ref_constraints <- lapply(
+    col_labels,
+    \(cl) vapply(references, \(ref) is.element(cl, ref[[2]]), logical(1))
+  ) |>
+    sapply(\(x) paste0("FK", which(x), recycle0 = TRUE))
+  all_constraints <- mapply(
+    \(x, y) paste(c(x, y), collapse = "; "),
+    key_constraints,
+    ref_constraints
+  )
+  constraint_strings <- ifelse(
+    nchar(all_constraints) == 0,
+    "",
+    paste0(": {constraint: [", all_constraints, "]}")
+  )
+
+  paste0(
     col_names,
-    "\"",
+    constraint_strings,
     recycle0 = TRUE
   )
-  paste(column_typing_info, collapse = "\n")
 }
 
-reference_strings <- function(x) {
+reference_strings_gv <- function(x) {
   lapply(
     references(x),
-    reference_string
+    reference_string_gv
   ) |>
     do.call(what = c) |>
-    unique() |> # can have dups if child-parent pairs are linked by multiple keys
-    paste(collapse = "\n")
+    unique() # can have dups if child-parent pairs are linked by multiple keys
 }
 
-reference_string <- function(reference) {
+reference_strings_d2 <- function(
+  x,
+  reference_level = c("attr", "relation")
+) {
+  reference_level <- match.arg(reference_level)
+  lapply(
+    references(x),
+    reference_string_d2,
+    reference_level = reference_level
+  ) |>
+    do.call(what = c) |>
+    unique() # can have dups if child-parent pairs are linked by multiple keys
+}
+
+reference_string_gv <- function(reference) {
   paste0(
-    "  ",
     paste(
       reference[[1]],
       paste0("FROM_", reference[[2]]),
@@ -735,6 +1048,33 @@ reference_string <- function(reference) {
   )
 }
 
+reference_string_d2 <- function(
+  reference,
+  reference_level = c("attr", "relation")
+) {
+  switch(
+    match.arg(reference_level),
+    attr = paste0(
+      paste(
+        reference[[1]],
+        reference[[2]],
+        sep = "."
+      ),
+      " -> ",
+      paste(
+        reference[[3]],
+        reference[[4]],
+        sep = "."
+      )
+    ),
+    relation = paste0(
+      reference[[1]],
+      " -> ",
+      reference[[3]]
+    )
+  )
+}
+
 to_labelled <- function(x) {
   x_labelled <- rename_attrs(x, to_attr_name(attrs_order(x)))
   names(x_labelled) <- to_node_name(names(x_labelled))
@@ -747,11 +1087,18 @@ to_elemented <- function(x) {
   x_elemented
 }
 
-to_main_name <- function(nm) paste0("\"", make.gv_names(nm), "\"")
+to_quoted <- function(x) {
+  x_quoted <- rename_attrs(x, to_quoted_name(attrs_order(x)))
+  names(x_quoted) <- to_quoted_name(names(x_quoted))
+  x_quoted
+}
+
+to_main_name <- function(nm) to_quoted_name(make.gv_names(nm))
 to_element_name <- function(nm) make.html_names(nm)
-to_node_name <- function(nm) paste0("\"", make.gv_names(nm), "\"", recycle0 = TRUE)
+to_node_name <- function(nm) to_quoted_name(make.gv_names(nm))
 # attrs to lower case, because GraphViz HTML record port connections ignore case
 to_attr_name <- function(nm) make.gv_names(tolower(nm))
+to_quoted_name <- function(nm, ...) paste0("\"", nm, "\"", recycle0 = TRUE)
 
 make.gv_names_base <- function(
   string,
@@ -805,3 +1152,5 @@ make.gv_names <- function(
       sub(pattern = "(^_)_$", replacement = "\\1", perl = TRUE)
   )
 }
+
+indent <- function(x) paste0("  ", x, recycle0 = TRUE)

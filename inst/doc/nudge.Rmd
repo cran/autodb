@@ -1,0 +1,401 @@
+---
+title: "A larger example: the nudge dataset"
+vignette: >
+  %\VignetteIndexEntry{A larger example: the nudge dataset}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+knitr:
+  opts_chunk:
+    collapse: true
+    comment: '#>'
+    fig-width: 7
+    fig-height: 5
+---
+
+```{r setup}
+library(autodb)
+```
+
+```{r check_diagrammer}
+if (requireNamespace("DiagrammeR", quietly = TRUE)) {
+  show <- function(x) DiagrammeR::grViz(gv(x), width = "100%")
+  maybe_plot <- function(x) DiagrammeR::grViz(gv(x), width = "100%")
+}else{
+  show <- print
+  maybe_plot <- function(x) invisible(NULL)
+}
+```
+
+Included in the package is a `r paste(dim(nudge), collapse = "-by-")` data frame called `nudge`:
+
+```{r nudge_classes}
+knitr::kable(data.frame(
+  attribute = names(nudge),
+  class = vapply(nudge, \(x) class(x)[[1]], character(1)),
+  NAs = vapply(nudge, \(x) sum(is.na(x)), integer(1)),
+  row.names = NULL
+))
+```
+
+This is the data set for a meta-analysis, looking at the effectiveness of "nudge" interventions. Like any meta-analysis, the data is strictly hierarchical: publications contain studies, which contain effect size measurements. We expect to see this hierarchy in the normalisation.
+
+# Initial decomposition
+
+The full dependency information for this data is rather large. This results in a relatively large search time for a data set of this size, but it still only takes a few seconds.
+
+```{r nudge_database_big}
+nudge_deps_big <- discover(nudge)
+nudge_schema_big <- normalise(nudge_deps_big, remove_avoidable = TRUE)
+nudge_db_big <- decompose(nudge, nudge_schema_big)
+```
+
+However, the resulting schema is hard to make anything out of, with more relations than we'd want to go through manually:
+
+```{r nudge_database_big_length}
+length(nudge_schema_big)
+```
+
+There are a few reasons for this, but the main one is the sheer number of functional dependencies discovered:
+
+```{r nudge_fds_big_length}
+length(nudge_deps_big)
+```
+
+Even if we remove the transitive dependencies, which are implied by the others, we still have `r length(autodb:::remove_extraneous_dependencies(nudge_deps_big))` dependencies.
+
+# Simplifying the search result
+
+This is a rather large set for the simple approach to simplifying a set of FDs: manually looking for spurious cases to remove before normalisation.
+
+As a hack, we can use `reduce` on the database. This finds the relations with the most records -- i.e. the relations with one record for each unique row in the original data -- and returns a reduced database, containing only those relations, and relations that they reference, either directly or indirectly.
+
+```{r nudge_reduce_big}
+nudge_reduced_big <- reduce(nudge_db_big)
+```
+
+The relations removed by `reduce` are often spurious, but not always: see the reference chains section of the [Planned improvements](plans.html) vignette (`vignette("plans", package = "autodb")`) for an example of non-spurious tables not being connected. However, `reduce` at least gives us something smaller to look at.
+
+In this case, the reduced database is still too large to easily review:
+
+```{r nudge_reduce_big_length}
+length(nudge_reduced_big)
+```
+
+Instead, we get a grip on what's going on by collecting statistics on attributes involved in the determinants.
+
+For example, we can also see how large the determinants are:
+
+```{r nudge_fds_big_size}
+table(lengths(detset(nudge_deps_big)))
+```
+
+While there are some large true determinants in real data, a common rule of thumb is that FDs with larger determinants are more likely to be spurious. This doesn't make for an obvious way to filter the FDs with some hard size limit, though.
+
+We can also see how often each attribute appears in a determinant:
+
+```{r nudge_fds_big_freq}
+sort(table(unlist(detset(nudge_deps_big))), decreasing = TRUE)
+```
+
+We can be more specific, and see how often each attributes appears in a determinant of a given size:
+
+```{r nudge_fds_big_freq_by_size}
+sort_by_rowSums <- function(x, ...) x[order(rowSums(x), ...), , drop = FALSE]
+level_table <- function(x, levels) table(factor(x, levels))
+attrs_table <- function(x) level_table(unlist(x), names(nudge))
+by_lengths <- function(x, f) do.call(cbind, tapply(x, lengths(x), f))
+
+by_lengths(detset(nudge_deps_big), attrs_table) |>
+  sort_by_rowSums(decreasing = TRUE)
+```
+
+Either way, we can see that there are attributes that we wouldn't expect to be in a determinant, but often are, especially in larger ones. We don't expect measurement attributes like `variance_d` and `sd_control` to co-determine anything else, but they often do.
+
+More generally, there are certain data classes we don't expect to see appear as determinants. For example, numerics (floats) are probably measurements, and shouldn't co-determine anything else. However, if we count determinant appearances by the attribute's class, we find that they often appear in determinants:
+
+```{r nudge_fds_big_class_freq_by_size}
+attr_classes <- vapply(nudge, \(x) class(x)[[1]], character(1))
+class_table <- function(x) {
+  level_table(attr_classes[unlist(x)], sort(unique(attr_classes)))
+}
+
+by_lengths(detset(nudge_deps_big), class_table) |>
+  sort_by_rowSums(decreasing = TRUE)
+```
+
+This suggests that a simple first step is to remove any FD with a float in the determinant. We can write this as a filter vector:
+
+```{r nudge_fds_big_class_filter}
+det_nofloat <- vapply(
+  detset(nudge_deps_big),
+  \(x) all(attr_classes[x] != "numeric"),
+  logical(1)
+)
+summary(det_nofloat)
+```
+
+This removes a lot!
+
+If we use the filtered set of FDs, we still get a large schema:
+
+```{r nudge_schema_big_filtered}
+length(normalise(nudge_deps_big[det_nofloat]))
+```
+
+However, if we reduce the resulting database, we get something much more manageable:
+
+```{r nudge_db_big_filtered}
+nudge_schema_filtered <- normalise(nudge_deps_big[det_nofloat])
+nudge_db_filtered <- reduce(decompose(nudge, nudge_schema_filtered))
+```
+
+```{r nudge_gv_big_filtered}
+show(nudge_db_filtered)
+```
+
+Let's look at the resulting relations, in two sets. Here's the left-hand set:
+
+```{r nudge_db_big_filtered_sample1}
+subsample <- c(
+  "es_id",
+  "study_id",
+  "intervention_technique_n_comparison_n_control",
+  "intervention_technique",
+  "n_comparison_n_control"
+)
+```
+
+```{r}
+show(nudge_db_filtered[subsample])
+```
+
+We see two relations, `es_id` and `study_id`, that clearly represent the effect and study levels of the data hierarchy, which is encouraging. They both contain the ID for the next level, too, as they should.
+
+The relation that the effect relation references, with the long name, looks rather arbitrary, but the relations it references look useful. One shows that the intervention technique determines the intervention category, i.e. techniques are subcategories.
+
+Less simply, the other relation contains the three effect sample sizes: comparison size, intervention arm size, and control arm size. Each pair of these sizes determines the other, which is what we'd see if the comparison size is the sum of the other two. However, we can't assume that this is the nature of the relationship. Indeed, we can find a case where it's false:
+
+```{r nudge_sample_sizes}
+knitr::kable(
+  subset(
+    nudge,
+    n_comparison != n_control + n_intervention,
+    c(reference, study_id, es_id, n_study, n_comparison, n_control, n_intervention)
+  ),
+  row.names = FALSE
+)
+```
+
+It turns out to be difficult to identify which results in the relevant paper these are referring to, since the presentation of the results is rather obfuscated. However, it is clear that these are referring to a part of the study with three arms instead of two (actually nine arms aggregated to groups of three). If we account for having two treatment arms, then the arm sizes do sum to the comparison size, and there is still a sum relationship of sorts, just not the simpler one we might expect.
+
+In any case, most of these relations in this set seem reasonable. The same can't be said of the other set, which should represent the publication-level data:
+
+```{r}
+show(nudge_db_filtered[setdiff(names(nudge_db_filtered), subsample)])
+```
+
+There is a lot going on here, so let's look at the last two:
+
+```{r}
+show(nudge_db_filtered[c("title", "reference")])
+```
+
+This is our publication-level data, but something is wrong. The publication ID is not a simple key, as we'd expect. Neither is the reference, which we'd expect to be unique, otherwise the bibliography will have duplicate entries. Instead, the only simple key is the publication's title. To use the ID or the reference as an identifier for publications, we need to use both together as a compound key.
+
+Without having looked at the data itself, these keys tell us that there are duplicate publication IDs and duplicate references. Since the keys for the `title` relation showed us the problem, we can search that relation to find the duplicates, with all the attributes needed for context:
+
+```{r dupfun}
+duplicates <- function(x) unique(x[duplicated(x)])
+subset_duplicates <- function(x, attr) {
+  x[x[[attr]] %in% duplicates(x[[attr]]), , drop = FALSE]
+}
+```
+
+```{r nudge_duplicates_check}
+nudge_title_relation <- records(nudge_db_filtered)$title
+knitr::kable(subset_duplicates(nudge_title_relation, "publication_id"))
+knitr::kable(subset_duplicates(nudge_title_relation, "reference"))
+```
+
+The publications with the same ID have the same first author in their references; this looks like a simple data entry error.
+
+BETA is the Behavioural Economics Team of the Australian Government, so it's not surprising that they'd have multiple publications/reports per year. However the references for publications were generated, the possibility of a group publishing multiple relevant papers in a year wasn't accounted for.
+
+Looking at the keys for the other relations, we see that they often include `publication_id` or `reference`, and the relationships they describe seem rather questionable. These are not worth going into in detail, since we can guess that they stem from the duplication problems.
+
+In a real project, this would be a good point to go back to the data provider with questions, since we now have examples from the data of surprising behaviour.
+
+# Fixing the data
+
+There are two ideal results when we find surprising behaviour:
+
+- The behaviour is as it should be, and we can correct our understanding of the data;
+- The behaviour is unexpected, and we can fix the data to get rid of it.
+
+In this example, `publication_id` and `reference` are synthetic variables, so we can easily fix the data ourselves:
+
+```{r}
+nudge_fixed <- within(nudge, {
+  publication_id[publication_id == 95 & year == 2015] <- max(publication_id) + 1L
+  reference[publication_id == 19] <- "BETA (2018a)"
+})
+```
+
+We can then re-run `autodb` to find the new schema. Note that we use the `exclude_class` argument to exclude FDs with floats in their determinants, instead of removing them ourselves. This prunes them from the search space, speeding up the search.
+
+```{r}
+db_fixed <- autodb(
+  nudge_fixed,
+  exclude_class = "numeric"
+)
+length(db_fixed)
+```
+
+```{r}
+show(reduce(db_fixed))
+```
+
+This is an improvement: the publications now have an ID and a reference as simple keys, as they should, and some of the questionable relations have disappeared.
+
+# Simplifying further with search filters
+
+Some of the relations are still questionable. If we examine them, we see that they all have large keys, containing three attributes or more. To simplify things, we can decide to remove them. Rather than manually filter the FDs again, we can do this using another filtering argument for `discover`/`autodb`, `detset_limit`:
+
+```{r}
+db_final <- autodb(
+  nudge_fixed,
+  exclude_class = "numeric",
+  detset_limit = 2
+)
+length(db_final)
+```
+
+The database is now small enough to not need to reduce it:
+
+```{r}
+show(db_final)
+```
+
+However, the relations not referred to by the effect relation look spurious too, so we can reduce the database to remove them too:
+
+```{r}
+show(reduce(db_final))
+```
+
+This is a great improvement. We are left with only two relations that we don't expect in general, but hold for this dataset in particular:
+
+- `publication_id_type_experiment` states that studies from the same publication, that use the same type of experiment, also take place in the same location.  This is probably not interesting, since the "location" is just a logical value for whether the study was conducted in the USA.
+- `publication_id_n_study` states that studies from the same publication, and with the same sample size, have the same location, domain, and target population. This is likely to be a coincidence, and not of much interest either.
+
+Dataset-particular relations like this are useful to check, since they often indicate sampling limitations, which can make our planned statistical analysis infeasible.
+
+We can remove either of these relations easily using `exclude`, since their keys contain attributes that don't appear in keys elsewhere. If we do, we get a schema that looks reasonable for data of this sort in general, apart from the mentioned issue with the effect sample sizes:
+
+```{r}
+show(reduce(autodb(
+  nudge_fixed,
+  exclude = c("type_experiment", "n_study"),
+  exclude_class = "numeric",
+  detset_limit = 2
+)))
+```
+
+# How not to remove spurious structure
+
+Instead of adding search filters, or removing functional dependencies, we could try to simplify the original schema by removing questionable relations. This section is about why this is a bad idea.
+
+This is the database we had:
+
+```{r nudge_gv_big_filtered}
+```
+
+What happens if we remove the offending relations from the schema?
+
+```{r nudge_publication_badfilter}
+nudge_schema_relfiltered <- nudge_schema_filtered[
+  vapply(
+    keys(nudge_schema_filtered),
+    \(ks) all(lengths(ks) <= 2) &&
+      sum(c("publication_id", "reference") %in% ks[[1]]) != 1,
+    logical(1)
+  )
+]
+```
+
+```{r}
+show(nudge_schema_relfiltered)
+```
+
+The offending relations are removed, but so are any foreign key references involving them. The resulting schema isn't invalid, but it's less connected than before.
+
+Calling `autoref` to re-generate the foreign key references doesn't entirely fix the problem, since, for example, no other relation contains a key for the `title` relation:
+
+```{r}
+show(autoref(nudge_schema_relfiltered))
+```
+
+This partly happens because removing relations removes more information than it needs to. If we remove the relevant functional dependencies instead, then we can have new intermediate relations appear in the new schema, whose dependencies were originally redundant by transitivity. Removing relations directly can't account for this.
+
+# Alternative approach: hierarchical limits
+
+An alternative approach is to make use of our knowledge that the data is hierarchical, and remove dependencies where an attribute is co-determining an attribute on a lower level. For example, publication-level attributes shouldn't co-determine study- or measurement-level attributes. This means we don't find cases where they do, but we could decide that any such cases are spurious, and we don't want to spend time on them.
+
+```{r hierarchical_levels}
+hlev <- c(
+  publication_id = 3,
+  study_id = 2,
+  es_id = 1,
+  reference = 3,
+  title = 3,
+  year = 3,
+  location = 2,
+  domain = 2,
+  intervention_category = 2,
+  intervention_technique = 2,
+  type_experiment = 2,
+  population = 2,
+  n_study = 2,
+  n_comparison = 1,
+  n_control = 1,
+  n_intervention = 1,
+  binary_outcome = 1,
+  mean_control = 1,
+  sd_control = 1,
+  mean_intervention = 1,
+  sd_intervention = 1,
+  cohens_d = 1,
+  variance_d = 1,
+  approximation = 1,
+  wansink = 2
+)
+hfilter <- function(fds, hlev) {
+  fds[mapply(
+    \(det, dep) all(hlev[det] <= hlev[[dep]]),
+    detset(fds),
+    dependant(fds)
+  )]
+}
+```
+
+Filtered result for the original data:
+
+```{r}
+nudge |>
+  discover(exclude_class = "numeric", detset_limit = 2) |>
+  hfilter(hlev) |>
+  normalise(remove_avoidable = TRUE) |>
+  decompose(df = nudge) |>
+  reduce() |>
+  show()
+```
+
+Filtered result for the fixed data:
+
+```{r}
+nudge_fixed |>
+  discover(exclude_class = "numeric", detset_limit = 2) |>
+  hfilter(hlev) |>
+  normalise(remove_avoidable = TRUE) |>
+  decompose(df = nudge_fixed) |>
+  show()
+```

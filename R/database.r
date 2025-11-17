@@ -264,11 +264,7 @@ database <- function(relations, references, check = TRUE) {
         paste(
           vapply(
             relat_errors,
-            \(relat) paste0(
-              relat[[1]], ".{", toString(relat[[2]]),
-              "} -> ",
-              relat[[3]], ".{", toString(relat[[4]]), "}"
-            ),
+            refstring,
             character(1)
           ),
           collapse = "\n"
@@ -321,16 +317,7 @@ reference_errors <- function(records, references) {
 #' @export
 rename_attrs.database <- function(x, names, ...) {
   new_subrels <- rename_attrs(subrelations(x), names)
-  new_refs <- lapply(
-    references(x),
-    \(ref) {
-      ref[c(2, 4)] <- lapply(
-        ref[c(2, 4)],
-        \(as) names[match(as, attrs_order(x))]
-      )
-      ref
-    }
-  )
+  new_refs <- rename_reference_attrs(references(x), attrs_order(x), names)
   database_nocheck(
     new_subrels,
     new_refs
@@ -445,7 +432,7 @@ c.database <- function(...) {
 
   references_list <- lapply(lst, references)
   new_references <- Map(
-    rename_reference_referands,
+    rename_reference_relations,
     references_list,
     lapply(lst, names),
     unname(split(
@@ -483,11 +470,7 @@ insert.database <- function(
   if (length(reference_checks)) {
     error_strings <- vapply(
       reference_checks,
-      \(relat) paste0(
-        relat[[1]], ".{", toString(relat[[2]]),
-        "} -> ",
-        relat[[3]], ".{", toString(relat[[4]]), "}"
-      ),
+      refstring,
       character(1)
     )
     stop(

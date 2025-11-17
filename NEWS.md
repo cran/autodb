@@ -1,3 +1,27 @@
+# autodb 3.2.4
+
+Minor test fixes to work under latest version of testthat.
+
+# autodb 3.2.3
+
+Minor improvements to documentation before submission.
+
+# autodb 3.2.2
+
+Some minor fixes to documentation to pass RHub checks.
+
+# autodb 3.2.1
+
+Some minor fixes to documentation to pass RHub checks.
+
+# autodb 3.2.0
+
+## Improvements
+
+* Added `d2`, a converter to the D2 plotting language, similar to `gv` for GraphViz.
+* Removed some partial match warnings (thanks to Hadley Wickham for the pull request).
+* The vignette has been split into several smaller ones, and hopefully is easier to read.
+
 # autodb 3.1.0
 
 ## Improvements
