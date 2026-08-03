@@ -2,7 +2,7 @@
 #'
 #' Finds all the minimal functional dependencies represented in a data frame.
 #'
-#' Column names for \code{\link{df}} must be unique.
+#' Column names for \code{df} must be unique.
 #'
 #' There are two search algorithms available for finding dependencies: DFD, and
 #' FDHits. These are described below.
@@ -302,6 +302,9 @@ discover <- function(
   if (skip_bijections && accuracy < 1)
     warning("skipping bijections when accuracy < 1 can result in incorrect output")
 
+  # round down
+  detset_limit <- as.integer(detset_limit)
+
   report <- reporter(progress, progress_file, new = TRUE)
 
   if (!isFALSE(keep_rownames)) {
@@ -309,8 +312,7 @@ discover <- function(
     df <- cbind(stats::setNames(data.frame(rownames(df)), nm), df)
   }
 
-  n_cols <- ncol(df)
-  if (n_cols == 0)
+  if (ncol(df) == 0)
     return(functional_dependency(
       stats::setNames(list(), character()),
       attrs_order = character()
@@ -340,8 +342,6 @@ discover <- function(
     valid_determinant_name & valid_determinant_class
   )
 
-  # convert all columns to integers, since they're checked for duplicates more
-  # quickly when calculating partitions
   # we must round floating-point/complex columns, since they're otherwise
   # infeasible:
   # - all.equal, i.e. equality by tolerance, isn't transient, so isn't an
@@ -360,37 +360,406 @@ discover <- function(
     df[] <- lapply(df, format_if_float, digits = digits)
   }
   report("simplifying data types")
-  df <- lookup_table(df)
 
-  switch(
+  # convert all columns to integers, since they're checked for duplicates more
+  # quickly when calculating partitions
+  lookup <- lookup_table(df)
+
+  nonfixed_info <- extract_fixed_attributes(
+    lookup,
+    valid_determinant_attrs_prefixing,
+    dependants,
+    report
+  )
+  fixed_fds <- lapply(
+    attr_names[nonfixed_info$fixed_dependants],
+    \(nm) list(character(), nm)
+  )
+  # check for zero dependants before removing simple keys, otherwise
+  # returning early would leave out the simple-key results
+  if (
+    length(nonfixed_info$nonfixed_dependants) == 0 ||
+    detset_limit < 1
+  ) {
+    report("no valid dependants, or detset_limit < 1, skipping search")
+    return(functional_dependency(fixed_fds, attr_names))
+  }
+
+  simple_key_info <- extract_simple_keys(
+    nonfixed_info,
+    lookup,
+    skip_bijections,
+    report
+  )
+  bijection_info <- extract_bijections(
+    nonfixed_info,
+    simple_key_info,
+    lookup,
+    attr_names,
+    skip_bijections,
+    detset_limit,
+    report
+  )
+
+  report(
+    paste(
+      with_number(
+        length(bijection_info$valid_determinant_attrs),
+        "attribute",
+        "",
+        "s"
+      ),
+      "considered as determinants"
+    )
+  )
+  report(
+    paste(
+      with_number(
+        length(simple_key_info$valid_dependant_attrs),
+        "attribute",
+        "",
+        "s"
+      ),
+      "considered as non-fixed dependants"
+    )
+  )
+
+  # simple keys determine everything else
+  simple_key_fds <- Reduce(
+    c,
+    lapply(
+      attr_names[simple_key_info$determinant_keys],
+      \(det) lapply(
+        setdiff(attr_names[simple_key_info$valid_dependant_attrs], det),
+        \(dep) list(det, dep)
+      )
+    ),
+    init = list()
+  )
+  dependencies <- switch(
     method,
     DFD = DFD(
-      df,
+      lookup[nonfixed_info$nonfixed],
+      valid_dependant_attrs = simple_key_info$valid_dependant_attrs,
+      valid_determinant_attrs = bijection_info$valid_determinant_attrs,
+      valid_determinant_nonfixed_indices =
+        bijection_info$valid_determinant_nonfixed_indices,
+      attr_names = attr_names[nonfixed_info$nonfixed],
+      rhs_nonfixed_indices = bijection_info$rhs_nonfixed_indices,
       accuracy = accuracy,
       full_cache  = full_cache,
       store_cache = store_cache,
-      skip_bijections = skip_bijections,
-      determinants = valid_determinant_attrs_prefixing,
-      dependants = dependants,
       detset_limit = detset_limit,
       report = report
-    ),
+    ) |>
+      filter_nonflat_dependencies(detset_limit) |>
+      flatten(),
     FDHitsSep = FDHits(
-      df,
+      lookup,
       method = "Sep",
-      determinants = valid_determinant_attrs_prefixing,
-      dependants = dependants,
+      determinants = bijection_info$valid_determinant_attrs,
+      dependants = simple_key_info$valid_dependant_attrs,
       detset_limit = detset_limit,
       report = report
     ),
     FDHitsJoint = FDHits(
-      df,
+      lookup,
       method = "Joint",
-      determinants = valid_determinant_attrs_prefixing,
-      dependants = dependants,
+      determinants = bijection_info$valid_determinant_attrs,
+      dependants = simple_key_info$valid_dependant_attrs,
       detset_limit = detset_limit,
       report = report
     )
+  )
+  dependencies <- c(fixed_fds, simple_key_fds, dependencies)
+  if (skip_bijections) {
+    dependencies <- dependencies |>
+      unflatten(attr_names) |>
+      add_deps_implied_by_bijections(
+        bijection_info$bijections,
+        attr_names[nonfixed_info$nonfixed],
+        attr_names
+      ) |>
+      add_deps_implied_by_simple_keys(
+        attr_names[simple_key_info$determinant_keys],
+        attr_names[simple_key_info$dependant_keys],
+        attr_names[simple_key_info$valid_dependant_attrs]
+      ) |>
+      flatten()
+  }
+  functional_dependency(dependencies, attr_names)
+}
+
+extract_fixed_attributes <- function(
+  lookup,
+  determinants,
+  dependants,
+  report
+) {
+  # trim down the attributes to use check for constant-value columns,
+  # because if columns are fixed we can ignore them for the rest of the search
+  fixed_bool <- vapply(lookup, \(x) all(x == 1L), logical(1))
+  fixed <- which(fixed_bool)
+  if (length(fixed) > 0)
+    report(paste(names(lookup)[fixed], "is fixed", collapse = "\n"))
+  nonfixed <- which(!fixed_bool)
+  list(
+    fixed = fixed,
+    fixed_dependants = intersect(fixed, dependants),
+    nonfixed = nonfixed,
+    nonfixed_determinants = intersect(determinants, nonfixed),
+    nonfixed_dependants = intersect(dependants, nonfixed)
+  )
+}
+
+extract_simple_keys <- function(
+  nonfixed_info,
+  lookup,
+  skip_bijections,
+  report
+) {
+  attr_names <- names(lookup)
+  # Non-fixed attributes might be single-attribute keys: we can list them as
+  # determining all other non-fixed attributes, use them in the main search only
+  # as dependants. If there are several single-attribute keys, and we're
+  # skipping bijections, then we can also remove all but one of them as
+  # dependants.
+  valid_determinant_attrs <- nonfixed_info$nonfixed_determinants
+  # Can't just check column values are seq_len(nrow(df)),
+  # because df can have duplicate rows, and we can't remove
+  # the duplicate rows in df, because it changes the behaviour
+  # for accuracy < 1.
+  simple_keys <- nonfixed_info$nonfixed[vapply(
+    df_unique(lookup[nonfixed_info$nonfixed]),
+    Negate(anyDuplicated),
+    logical(1)
+  )]
+  determinant_keys <- intersect(simple_keys, nonfixed_info$nonfixed_determinants)
+  dependant_keys <- intersect(simple_keys, nonfixed_info$nonfixed_dependants)
+  valid_dependant_attrs <- nonfixed_info$nonfixed_dependants
+  if (length(simple_keys) > 0) {
+    report(paste("single-attribute keys:", toString(attr_names[simple_keys])))
+    valid_determinant_attrs <- setdiff(valid_determinant_attrs, simple_keys)
+    if (skip_bijections) {
+      valid_dependant_attrs <- setdiff(
+        nonfixed_info$nonfixed_dependants,
+        dependant_keys[-1]
+      )
+    }
+  }
+  list(
+    determinant_keys = determinant_keys,
+    dependant_keys = dependant_keys,
+    valid_dependant_attrs = valid_dependant_attrs,
+    valid_determinant_nonfixed_indices = match(
+      valid_determinant_attrs,
+      nonfixed_info$nonfixed
+    )
+  )
+}
+
+extract_bijections <- function(
+  nonfixed_info,
+  simple_key_info,
+  lookup,
+  attr_names,
+  skip_bijections,
+  detset_limit,
+  report
+) {
+  # look for single-attribute bijections
+  # these are cheaper to check than the general FD case, because we can use
+  # identical()
+  # record bijection A <-> B if A and B are in both dependants and determinants,
+  # with A earlier
+  # this is not strictly necessary: we can still make use of a bijection group
+  # if there are multiple determinants or multiple dependants, even if these
+  # don't overlap. allowing for this is a TODO.
+  nonfixed_lookup <- lookup[nonfixed_info$nonfixed]
+  bijections <- list()
+  rhs_nonfixed_indices <- which(is.element(
+    nonfixed_info$nonfixed,
+    simple_key_info$valid_dependant_attrs
+  ))
+  bijection_nonfixed_indices <- vapply(
+    rhs_nonfixed_indices,
+    \(rhs) {
+      if (
+        !skip_bijections ||
+        detset_limit == 0 ||
+        !is.element(rhs, simple_key_info$valid_determinant_nonfixed_indices)
+      )
+        return(NA_integer_)
+      lhs_nonfixed_indices <- simple_key_info$valid_determinant_nonfixed_indices[
+        simple_key_info$valid_determinant_nonfixed_indices < rhs
+      ]
+      lhs_bijection_candidates <- intersect(
+        lhs_nonfixed_indices,
+        rhs_nonfixed_indices
+      )
+      lhs_bijection_candidates[vapply(
+        nonfixed_lookup[lhs_bijection_candidates],
+        identical,
+        logical(1),
+        nonfixed_lookup[[rhs]]
+      )][1]
+    },
+    integer(1)
+  )
+  for (n in which(!is.na(bijection_nonfixed_indices))) {
+    rhs <- rhs_nonfixed_indices[[n]]
+    bijection_candidate_nonfixed_index <- bijection_nonfixed_indices[[n]]
+    report(paste(
+      attr_names[nonfixed_info$nonfixed][c(
+        rhs,
+        bijection_candidate_nonfixed_index
+      )],
+      collapse = " equivalent to "
+    ))
+    bij_ind <- match(bijection_candidate_nonfixed_index, names(bijections))
+    if (is.na(bij_ind))
+      bijections <- c(
+        bijections,
+        stats::setNames(
+          list(c(bijection_candidate_nonfixed_index, rhs)),
+          bijection_candidate_nonfixed_index
+        )
+      )
+    else{
+      bijections[[bij_ind]] <- c(
+        bijections[[bij_ind]],
+        rhs
+      )
+    }
+  }
+  valid_determinant_nonfixed_indices <- setdiff(
+    simple_key_info$valid_determinant_nonfixed_indices,
+    rhs_nonfixed_indices[!is.na(bijection_nonfixed_indices)]
+  )
+  # should trim dependants here too
+  # this needs some rewriting for the case where a bijection's first
+  # attribute isn't both determinant and dependant
+  list(
+    bijections = bijections,
+    rhs_nonfixed_indices = rhs_nonfixed_indices[
+      is.na(bijection_nonfixed_indices)
+    ],
+    valid_determinant_nonfixed_indices = valid_determinant_nonfixed_indices,
+    valid_determinant_attrs = nonfixed_info$nonfixed[
+      valid_determinant_nonfixed_indices
+    ]
+  )
+}
+
+add_deps_implied_by_bijections <- function(
+  dependencies,
+  bijections,
+  nonfixed,
+  column_names
+) {
+  for (b in lapply(bijections, \(x) nonfixed[x])) {
+    # first is the one used in discovery
+    first_index <- b[[1]]
+    # first determined by others
+    dependencies[[first_index]] <- c(
+      dependencies[[first_index]],
+      b[-1]
+    )
+    # non-first determined by first and each other
+    for (replacement in b[-1]) {
+      dependencies[[replacement]] <- c(
+        first_index,
+        setdiff(dependencies[[first_index]], replacement)
+      )
+      stopifnot(!anyDuplicated(dependencies[[replacement]]))
+    }
+    # non-first can substitute for first in determinants
+    for (rhs in setdiff(seq_along(dependencies), match(b, column_names))) {
+      without_first <- lapply(
+        Filter(\(d) is.element(first_index, d), dependencies[[rhs]]),
+        \(d) d[d != first_index]
+      )
+      dependencies[[rhs]] <- c(
+        dependencies[[rhs]],
+        outer(without_first, b[-1], Map, f = c)
+      )
+      stopifnot(!anyDuplicated(dependencies[[rhs]]))
+    }
+  }
+  dependencies
+}
+
+add_deps_implied_by_simple_keys <- function(
+  dependencies,
+  determinant_keys,
+  dependant_keys,
+  valid_dependant_attrs
+) {
+  # non-first keys have same non-key determinants as first, plus other keys
+  if (length(dependant_keys) > 0) {
+    first_dep <- dependant_keys[[1]]
+    deps <- setdiff(dependencies[[first_dep]], as.list(determinant_keys))
+    for (key in dependant_keys) {
+      replacements <- setdiff(determinant_keys, key)
+      dependencies[[key]] <- c(deps, as.list(replacements))
+      stopifnot(!anyDuplicated(dependencies[[key]]))
+    }
+  }
+
+  # non-first can substitute for first in compound determinants
+  if (length(determinant_keys) > 0) {
+    first_det <- determinant_keys[[1]]
+    for (rhs in setdiff(valid_dependant_attrs, dependant_keys)) {
+      without_first <- Filter(
+        \(d) is.element(first_det, d) && length(d) > 1,
+        dependencies[[rhs]]
+      ) |>
+        lapply(\(d) d[d != first_det])
+      dependencies[[rhs]] <- c(
+        dependencies[[rhs]],
+        outer(without_first, determinant_keys[-1], Map, f = c)
+      )
+      stopifnot(!anyDuplicated(dependencies[[rhs]]))
+    }
+  }
+
+  dependencies
+}
+
+flatten <- function(dependencies) {
+  result <- list()
+  for (i in seq_along(dependencies)) {
+    rhs <- names(dependencies)[i]
+    result <- c(
+      result,
+      lapply(dependencies[[i]], \(lhs) list(lhs, rhs))
+    )
+  }
+  result
+}
+
+unflatten <- function(flattened, attrs_order) {
+  split(
+    lapply(flattened, `[[`, 1),
+    factor(
+      vapply(flattened, `[[`, character(1), 2),
+      attrs_order
+    )
+  )
+}
+
+filter_nonflat_dependencies <- function(
+  dependencies,
+  detset_limit
+) {
+  lapply(
+    dependencies,
+    \(x) {
+      if (length(x) == 0)
+        return(x[FALSE])
+      wanted <- lengths(x) <= detset_limit
+      x[wanted]
+    }
   )
 }
 
@@ -402,8 +771,30 @@ format_if_float <- function(x, digits) {
 }
 
 lookup_table <- function(df) {
+  if (ncol(df) == 0)
+    return(df)
   lapply(df, lookup_indices) |>
     data.frame(check.names = FALSE)
 }
 
-lookup_indices <- function(x) match(x, x)
+lookup_indices <- function(x) {
+  # for atomic types match(x, x) work well,
+  if (is.atomic(x) && length(dim(x)) == 0)
+    return(match(x, x))
+  if (inherits(x, "matrix"))
+    x <- apply(x, 1, identity, simplify = FALSE)
+  if (inherits(x, "data.frame"))
+    x <- df_records(x)
+  # for nestable lists match() gives the wrong answer,
+  # because it disagrees with identical()/duplicated().
+  # match() logic is used in merge(), so we still have
+  # difficulties in rejoin(), but using identical() logic
+  # here at least means we can always call autodb() without
+  # a data frame violating its own schema.
+  vapply(
+    x,
+    \(y) Position(\(u) identical(y, u), x),
+    integer(1),
+    USE.NAMES = FALSE
+  )
+}

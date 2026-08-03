@@ -1,90 +1,16 @@
 DFD <- function(
   lookup,
+  valid_dependant_attrs,
+  valid_determinant_attrs,
+  valid_determinant_nonfixed_indices,
+  attr_names,
+  rhs_nonfixed_indices,
   accuracy = 1,
   full_cache = TRUE,
   store_cache = TRUE,
-  skip_bijections = FALSE,
-  determinants = seq_along(lookup),
-  dependants = seq_along(lookup),
   detset_limit = ncol(lookup) - 1L,
   report = reporter(report = FALSE, con = "", new = TRUE)
 ) {
-  attrs <- seq_along(lookup)
-  attr_names <- names(lookup)
-  n_cols <- length(attrs)
-
-  dependencies <- stats::setNames(rep(list(list()), n_cols), attr_names)
-
-  # check for constant-value columns, because if columns are fixed we can
-  # ignore them for the rest of the search
-  fixed <- integer()
-  for (attr in attrs) {
-    if (all(lookup[[attr]] == 1L)) {
-      report(paste(attr_names[[attr]], "is fixed"))
-      fixed <- c(fixed, attr)
-      if (attr %in% dependants)
-        dependencies[[attr]] <- list(character())
-    }
-  }
-  nonfixed <- setdiff(attrs, fixed)
-
-  valid_dependant_attrs <- intersect(dependants, nonfixed)
-  # check for zero dependants before removing simple keys, otherwise
-  # returning early would leave out the simple-key results
-  if (
-    length(valid_dependant_attrs) == 0 ||
-    detset_limit < 1
-  ) {
-    report("no valid dependants, or detset_limit < 1, skipping search")
-    return(flatten(
-      filter_nonflat_dependencies(dependencies, detset_limit),
-      attr_names
-    ))
-  }
-
-  # For non-fixed non-key attributes, all can be dependants,
-  # but might not all be valid determinants.
-  valid_determinant_attrs_prekeys <- intersect(
-    nonfixed,
-    determinants
-  )
-
-  # Non-fixed attributes might be single-attribute keys: we can list them as
-  # determining all other non-fixed attributes, use them in the main search only
-  # as dependants. If there are several single-attribute keys, and we're
-  # skipping bijections, then we can also remove all but one of them as
-  # dependants.
-  valid_determinant_attrs <- valid_determinant_attrs_prekeys
-  # Can't just check column values are seq_len(nrow(df)),
-  # because df can have duplicate rows, and we can't remove
-  # the duplicate rows in df, because it changes the behaviour
-  # for accuracy < 1.
-  df_uniq <- df_unique(lookup)
-  simple_keys <- nonfixed[vapply(
-    df_uniq[nonfixed],
-    Negate(anyDuplicated),
-    logical(1)
-  )]
-  determinant_keys <- intersect(simple_keys, valid_determinant_attrs_prekeys)
-  dependant_keys <- intersect(simple_keys, valid_dependant_attrs)
-  if (length(simple_keys) > 0) {
-    report(paste("single-attribute keys:", toString(attr_names[simple_keys])))
-    valid_determinant_attrs <- setdiff(valid_determinant_attrs, simple_keys)
-    if (skip_bijections) {
-      valid_dependant_attrs <- setdiff(valid_dependant_attrs, dependant_keys[-1])
-    }
-  }
-
-  if (length(valid_determinant_attrs) < n_cols) {
-    report(
-      paste(
-        "attributes not considered as determinants:",
-        toString(attr_names[-valid_determinant_attrs])
-      )
-    )
-  }
-  valid_determinant_nonfixed_indices <- match(valid_determinant_attrs, nonfixed)
-
   # Maximum size of determinant set for a dependant is number
   # of other valid determinants.
   # If there are dependants that aren't valid determinants,
@@ -101,8 +27,8 @@ DFD <- function(
       lhs_attrs_limit,
       "columns possible in a determinant set currently supported"
     ))
-  bijections <- list()
 
+  dependencies <- unflatten(list(), attr_names)
   # main search
   if (max_n_lhs_attrs > 0) {
     report("constructing powerset")
@@ -114,117 +40,53 @@ DFD <- function(
     # of time duplicating reduction work
     all_powersets <- stats::setNames(list(powerset), max_n_lhs_attrs)
     partition_handler <- checkable_partition_handler(
-      unname(lookup[, nonfixed, drop = FALSE]),
+      unname(lookup),
       key_class = "integer",
       accuracy = accuracy,
       full_cache = full_cache
     )
-    for (rhs in which(nonfixed %in% valid_dependant_attrs)) {
-      report(paste("dependant", attr_names[nonfixed][rhs]))
+    for (rhs in rhs_nonfixed_indices) {
+      report(paste("dependant", attr_names[rhs]))
       lhs_nonfixed_indices <- setdiff(valid_determinant_nonfixed_indices, rhs)
       n_lhs_attrs <- length(lhs_nonfixed_indices)
-      expected_n_lhs_attrs <- max_n_lhs_attrs -
-        (n_dependant_only > 0 && is.element(rhs, valid_determinant_nonfixed_indices))
-      stopifnot(n_lhs_attrs == expected_n_lhs_attrs)
-      bijection_candidate_nonfixed_indices <- if (skip_bijections)
-        match(
-          names(dependencies)[
-            vapply(
-              dependencies,
-              \(x) any(vapply(x, identical, logical(1), attr_names[nonfixed][[rhs]])),
-              logical(1)
-            )
-          ],
-          attr_names[nonfixed]
-        ) |>
-        intersect(lhs_nonfixed_indices)
-      else
-        integer()
-      if (n_lhs_attrs > 0) {
-        if (n_lhs_attrs %in% names(all_powersets))
-          nodes <- all_powersets[[as.character(n_lhs_attrs)]]
-        else{
-          nodes <- reduce_powerset(powerset, n_lhs_attrs)
-          all_powersets[[as.character(n_lhs_attrs)]] <- nodes
-        }
-        report("determinants available, starting search")
-        lhss <- find_LHSs_dfd(
-          rhs,
-          lhs_nonfixed_indices,
-          nodes,
-          n_lhs_attrs,
-          partition_handler,
-          bijection_candidate_nonfixed_indices,
-          detset_limit
-        )
-        if (!store_cache)
-          partition_handler$reset()
-        if (lhss[[2]]) {
-          stopifnot(
-            is.element(lhss[[1]], bijection_candidate_nonfixed_indices),
-            lhss[[1]] < rhs
-          )
-          bij_ind <- match(lhss[[1]], names(bijections))
-          if (is.na(bij_ind))
-            bijections <- c(
-              bijections,
-              stats::setNames(list(c(lhss[[1]], rhs)), lhss[[1]])
-            )
-          else{
-            bijections[[bij_ind]] <- c(
-              bijections[[bij_ind]],
-              rhs
-            )
-          }
-          valid_determinant_nonfixed_indices <- setdiff(
-            valid_determinant_nonfixed_indices,
-            rhs
-          )
-          max_n_lhs_attrs <- max_n_lhs_attrs - 1L
-          if (max_n_lhs_attrs %in% names(all_powersets))
-            powerset <- all_powersets[[as.character(max_n_lhs_attrs)]]
-          else{
-            powerset <- reduce_powerset(powerset, max_n_lhs_attrs)
-            all_powersets[[as.character(max_n_lhs_attrs)]] <- powerset
-          }
-        }else
-          dependencies[[attr_names[nonfixed][rhs]]] <- c(
-            dependencies[[attr_names[nonfixed][rhs]]],
-            lapply(lhss[[1]], \(x) attr_names[nonfixed][x])
-          )
+      stopifnot(n_lhs_attrs <= max_n_lhs_attrs)
+      if (n_lhs_attrs == 0)
+        next
+      if (n_lhs_attrs %in% names(all_powersets))
+        nodes <- all_powersets[[as.character(n_lhs_attrs)]]
+      else{
+        nodes <- reduce_powerset(powerset, n_lhs_attrs)
+        all_powersets[[as.character(n_lhs_attrs)]] <- nodes
       }
+      report("determinants available, starting search")
+      lhss <- find_LHSs_dfd(
+        rhs,
+        lhs_nonfixed_indices,
+        nodes,
+        n_lhs_attrs,
+        partition_handler,
+        detset_limit
+      )
+      if (!store_cache)
+        partition_handler$reset()
+      dependencies[[attr_names[rhs]]] <- c(
+        dependencies[[attr_names[rhs]]],
+        lapply(lhss, \(x) attr_names[x])
+      )
     }
   }
 
   report(paste0(
     "DFD complete",
     "\n",
-    with_number(partition_handler$cache_size(), "partition", " cached", "s cached")
+    with_number(
+      if (max_n_lhs_attrs == 0) 0L else partition_handler$cache_size(),
+      "partition",
+      " cached",
+      "s cached"
+    )
   ))
-  dependencies <- add_simple_key_deps(
-    dependencies,
-    attr_names[determinant_keys],
-    attr_names[dependant_keys],
-    attr_names[valid_dependant_attrs]
-  )
-  if (skip_bijections) {
-    dependencies <- add_deps_implied_by_bijections(
-      dependencies,
-      bijections,
-      attr_names[nonfixed],
-      attr_names
-    )
-    dependencies <- add_deps_implied_by_simple_keys(
-      dependencies,
-      attr_names[determinant_keys],
-      attr_names[dependant_keys],
-      attr_names[valid_dependant_attrs]
-    )
-  }
-  flatten(
-    filter_nonflat_dependencies(dependencies, detset_limit),
-    attr_names
-  )
+  dependencies
 }
 
 find_LHSs_dfd <- function(
@@ -233,7 +95,6 @@ find_LHSs_dfd <- function(
   nodes,
   n_lhs_attrs,
   partition_handler,
-  bijection_candidate_nonfixed_indices,
   detset_limit
 ) {
   # The original library "names" nodes with their attribute set,
@@ -270,13 +131,6 @@ find_LHSs_dfd <- function(
   min_deps <- integer()
   max_non_deps <- integer()
   trace <- integer()
-  bijection_nodes <- to_nodes(
-    match(
-      bijection_candidate_nonfixed_indices,
-      lhs_nonfixed_indices
-    ),
-    nodes
-  )
 
   while (length(seeds) != 0) {
     node <- seeds[sample.int(length(seeds), 1)]
@@ -287,14 +141,6 @@ find_LHSs_dfd <- function(
           if (isTRUE(min_infer)) {
             nodes$category[node] <- 2L
             min_deps <- c(min_deps, node)
-            if (is.element(node, bijection_nodes)) {
-              lhs_index <- lhs_nonfixed_indices[nodes$bits[[node]]]
-              stopifnot(is.element(
-                lhs_index,
-                bijection_candidate_nonfixed_indices
-              ))
-              return(list(lhs_index, TRUE))
-            }
           }
           if (isFALSE(min_infer))
             nodes$category[node] <- 1L
@@ -333,14 +179,6 @@ find_LHSs_dfd <- function(
             if (isTRUE(min_infer)) {
               min_deps <- c(min_deps, node)
               nodes$category[node] <- 2L
-              if (is.element(node, bijection_nodes)) {
-                lhs_index <- lhs_nonfixed_indices[nodes$bits[[node]]]
-                stopifnot(is.element(
-                  lhs_index,
-                  bijection_candidate_nonfixed_indices
-                ))
-                return(list(lhs_index, TRUE))
-              }
             }
             if (is.na(min_infer))
               nodes$category[node] <- 3L
@@ -380,10 +218,7 @@ find_LHSs_dfd <- function(
       detset_limit
     )
   }
-  list(
-    lapply(min_deps, \(md) lhs_nonfixed_indices[nodes$bits[[md]]]),
-    FALSE
-  )
+  lapply(min_deps, \(md) lhs_nonfixed_indices[nodes$bits[[md]]])
 }
 
 pick_next_node <- function(node, nodes, trace, min_deps, max_non_deps) {
@@ -536,128 +371,4 @@ minimise_seeds <- function(seeds, bitsets) {
     }
   }
   unique_seeds[include]
-}
-
-add_simple_key_deps <- function(
-  dependencies,
-  determinant_keys,
-  dependant_keys,
-  valid_dependant_attrs
-) {
-  nonkey_dependants <- setdiff(valid_dependant_attrs, dependant_keys)
-  dependencies[nonkey_dependants] <- lapply(
-    dependencies[nonkey_dependants],
-    \(dets) c(as.list(determinant_keys), dets)
-  )
-  dependencies[dependant_keys] <- lapply(
-    dependant_keys,
-    \(key) c(as.list(setdiff(determinant_keys, key)), dependencies[[key]])
-  )
-  dependencies
-}
-
-add_deps_implied_by_bijections <- function(
-  dependencies,
-  bijections,
-  nonfixed,
-  column_names
-) {
-  for (b in bijections) {
-    first_index <- nonfixed[[b[[1]]]]
-    # add the bijection
-    for (nonfixed_index in b[-1]) {
-      replacement <- nonfixed[[nonfixed_index]]
-      dependencies[[replacement]] <- c(
-        first_index,
-        setdiff(dependencies[[first_index]], replacement)
-      )
-      stopifnot(!anyDuplicated(dependencies[[nonfixed_index]]))
-    }
-    # add dependencies implied by the bijection
-    # only needed when bijection attribute is earlier than dependant, since
-    # later ones were added before the bijection was known
-    for (rhs in setdiff(seq_along(dependencies), match(nonfixed[b], column_names))) {
-      for (nonfixed_index in b[-1]) {
-        replacement <- nonfixed[[nonfixed_index]]
-        if (match(replacement, column_names) < rhs) {
-          dependencies[[rhs]] <- union(
-            dependencies[[rhs]],
-            lapply(
-              Filter(\(d) is.element(first_index, d), dependencies[[rhs]]),
-              \(d) c(setdiff(d, first_index), replacement)
-            )
-          )
-        }
-        stopifnot(!anyDuplicated(dependencies[[rhs]]))
-      }
-    }
-  }
-  dependencies
-}
-
-add_deps_implied_by_simple_keys <- function(
-  dependencies,
-  determinant_keys,
-  dependant_keys,
-  valid_dependant_attrs
-) {
-  # transfer determinants of kept dependant key to others
-  if (length(dependant_keys) > 0) {
-    first_dep <- dependant_keys[[1]]
-    deps <- setdiff(dependencies[[first_dep]], as.list(determinant_keys))
-    for (key in dependant_keys) {
-      replacements <- setdiff(determinant_keys, key)
-      dependencies[[key]] <- c(deps, as.list(replacements))
-      stopifnot(!anyDuplicated(dependencies[[key]]))
-    }
-  }
-
-  # swap determinant keys around in compound determinants
-  if (length(determinant_keys) > 0) {
-    first_det <- determinant_keys[[1]]
-    for (rhs in setdiff(valid_dependant_attrs, dependant_keys)) {
-      for (replacement in determinant_keys[-1]) {
-        dependencies[[rhs]] <- c(
-          dependencies[[rhs]],
-          lapply(
-            Filter(
-              \(d) is.element(first_det, d) && length(d) > 1,
-              dependencies[[rhs]]
-            ),
-            \(d) c(setdiff(d, first_det), replacement)
-          )
-        )
-        stopifnot(!anyDuplicated(dependencies[[rhs]]))
-      }
-    }
-  }
-
-  dependencies
-}
-
-flatten <- function(dependencies, attributes) {
-  result <- list()
-  for (i in seq_along(dependencies)) {
-    rhs <- names(dependencies)[i]
-    result <- c(
-      result,
-      lapply(dependencies[[i]], \(lhs) list(lhs, rhs))
-    )
-  }
-  functional_dependency(result, attributes)
-}
-
-filter_nonflat_dependencies <- function(
-  dependencies,
-  detset_limit
-) {
-  lapply(
-    dependencies,
-    \(x) {
-      if (length(x) == 0)
-        return(x[FALSE])
-      wanted <- lengths(x) <= detset_limit
-      x[wanted]
-    }
-  )
 }

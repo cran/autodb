@@ -7,7 +7,7 @@ expect_errorless <- function(object) {
   )
 }
 
-is_valid_functional_dependency <- function(x) {
+expect_valid_functional_dependency <- function(x) {
   expect_s3_class(x, "functional_dependency")
   attrs <- attrs_order(x)
   expect_true(all(lengths(unclass(x)) == 2L))
@@ -27,28 +27,19 @@ is_valid_functional_dependency <- function(x) {
   )))
 }
 
-is_valid_minimal_functional_dependency <- function(x) {
-  is_valid_functional_dependency(x)
-  grouped <- split(detset(x), dependant(x))
-  expect_true(!any(
-    vapply(
-      grouped,
-      \(detsets) anyDuplicated(detsets) ||
-        any(outer(
-          detsets,
-          detsets,
-          Vectorize(\(d1, d2) {
-            both <- intersect(d1, d2)
-            !setequal(d1, d2) &&
-              (setequal(both, d1) || setequal(both, d2))
-          })
-        )),
-      logical(1)
-    )
-  ))
+expect_valid_minimal_functional_dependency <- function(x) {
+  expect_valid_functional_dependency(x)
+  expect_true(all(outer(x, x, "<=") == diag(length(x))))
 }
 
-is_valid_relation_schema <- function(x, unique = FALSE, single_empty_key = FALSE) {
+expect_valid_key_set <- function(x) {
+  expect_identical(class(x), "list")
+  expect_true(all(vapply(x, \(y) class(y)[[1]], character(1)) == "character"))
+  expect_gt(length(x), 0) # every relation has at least one key
+  expect_true(all(outer(x, x, Vectorize(\(y, z) all(is.element(y, z)))) == diag(length(x))))
+}
+
+expect_valid_relation_schema <- function(x, unique = FALSE, single_empty_key = FALSE) {
   expect_s3_class(x, "relation_schema")
   expect_true(is.character(names(x)))
   expect_true(!anyDuplicated(names(x)))
@@ -103,160 +94,255 @@ is_valid_relation_schema <- function(x, unique = FALSE, single_empty_key = FALSE
   }
 }
 
-is_valid_references <- function(
+strexpect_valid_references <- function(
   x,
   same_attr_name = FALSE,
   single_key_pairs = FALSE
 ) {
-  act <- quasi_label(rlang::enquo(x), arg = "x")
+  msg <- character()
 
   references <- references(x)
-  attrs <- attrs(x)
   if (length(references) == 0L)
-    return(invisible(act$val))
+    return(msg)
+
+  attrs <- attrs(x)
+  lab <- rlang::quo_get_expr(rlang::enquo(x))
 
   # former condition is temporary until references are properly grouped
   if (single_key_pairs && anyDuplicated(references))
-    fail(sprintf("%s has duplicate references", act$lab))
-  for (fk in references) {
-    if (!is(fk, "list"))
-      fail(sprintf(
-        "%s has non-list references",
-        act$lab
-      ))
-    if (length(fk) != 4L)
-      fail(sprintf(
-        "%s has non-length-four references",
-        act$lab
-      ))
-    if (!is.character(fk[[1]]))
-      fail(sprintf(
-        "%s has non-character reference child names",
-        act$lab
-      ))
-    if (!is.character(fk[[2]]))
-      fail(sprintf(
-        "%s has non-character reference child attributes",
-        act$lab
-      ))
-    if (!is.character(fk[[3]]))
-      fail(sprintf(
-        "%s has non-character reference parent names",
-        act$lab
-      ))
-    if (!is.character(fk[[4]]))
-      fail(sprintf(
-        "%s has non-character reference parent attributes",
-        act$lab
-      ))
-    if (!all(is.element(unlist(fk[c(1L, 3L)]), names(attrs))))
-      fail(sprintf(
-        "%s has references over non-present relation names",
-        act$lab
-      ))
-    if (fk[[1]] == fk[[3]]) # no self-references, relax this?
-      fail(sprintf(
-        "%s has self-references in references",
-        act$lab
-      ))
-    if (same_attr_name && !identical(fk[[2]], fk[[4]]))
-      fail(sprintf(
-        "%s has non-matching attribute names in references",
-        act$lab
-      ))
-    if (anyDuplicated(fk[[2]]))
-      fail(sprintf(
-        "%s has references with non-unique child attribute names",
-        act$lab
-      ))
-    if (anyDuplicated(fk[[4]]))
-      fail(sprintf(
-        "%s has references with non-unique parent attribute names",
-        act$lab
-      ))
-    if (length(fk[[2]]) == 0L || length(fk[[4]]) == 0L)
-      fail(sprintf(
-        "%s has references with zero-length attribute sets",
-        act$lab
-      ))
-    if (length(fk[[2]]) != length(fk[[4]]))
-      fail(sprintf(
-        "%s has references with different attribute set lengths",
-        act$lab
-      ))
-    if (!all(is.element(fk[[2]], attrs[[fk[[1]]]])))
-      fail(sprintf(
-        "%s has invalid child attribute names in references",
-        act$lab
-      ))
-    if (!all(is.element(fk[[4]], attrs[[fk[[3]]]])))
-      fail(sprintf(
-        "%s has invalid parent attribute names in references",
-        act$lab
-      ))
+    msg <- c(msg, paste(lab, "has duplicate references"))
+
+  fks_are_lists <- vapply(references, inherits, logical(1), "list")
+  if (any(!fks_are_lists))
+    msg <- c(msg, paste(lab, "has non-list references"))
+
+  fks_are_length_four <- lengths(references) == 4
+  if (any(!fks_are_length_four))
+    msg <- c(msg, paste(lab, "has non-length-four references"))
+
+  formed_refs <- references[fks_are_lists & fks_are_length_four]
+
+  formed_child_names_char <- vapply(
+    formed_refs,
+    \(x) is.character(x[[1]]),
+    logical(1)
+  )
+  formed_child_names_scalar <- vapply(
+    formed_refs,
+    \(x) length(x[[1]]) == 1,
+    logical(1)
+  )
+
+  formed_parent_names_char <- vapply(
+    formed_refs,
+    \(x) is.character(x[[3]]),
+    logical(1)
+  )
+  formed_parent_names_scalar <- vapply(
+    formed_refs,
+    \(x) length(x[[3]]) == 1,
+    logical(1)
+  )
+
+  formed_child_attrs_char <- vapply(
+    formed_refs,
+    \(x) is.character(x[[2]]),
+    logical(1)
+  )
+  formed_parent_attrs_char <- vapply(
+    formed_refs,
+    \(x) is.character(x[[4]]),
+    logical(1)
+  )
+  formed_attrs_length_match <- vapply(
+    formed_refs,
+    \(x) length(x[[2]]) == length(x[[4]]),
+    logical(1)
+  )
+
+  if (any(!formed_child_names_char))
+    msg <- c(msg, paste(lab, "has non-character reference child names"))
+  if (any(!formed_child_attrs_char))
+    msg <- c(msg, paste(lab, "has non-character reference child attributes"))
+  if (any(!formed_parent_names_char))
+    msg <- c(msg, paste(lab, "has non-character reference parent names"))
+  if (any(!formed_parent_attrs_char))
+    msg <- c(msg, paste(lab, "has non-character reference parent attributes"))
+
+  if (any(!formed_child_names_scalar))
+    msg <- c(msg, paste(lab, "has non-length-one reference child names"))
+  if (any(!formed_parent_names_scalar))
+    msg <- c(msg, paste(lab, "has non-length-one reference parent names"))
+  if (any(!formed_attrs_length_match))
+    msg <- c(msg, paste(lab, "has non-matching child/parent attribute set lengths"))
+
+  elformed_refs <- formed_refs[
+    formed_child_names_char & formed_parent_names_char &
+      formed_child_attrs_char & formed_parent_attrs_char &
+      formed_child_names_scalar & formed_parent_names_scalar &
+      formed_attrs_length_match
+  ]
+
+  relnames_exist <- vapply(
+    elformed_refs,
+    \(ref) all(c(ref[[1]], ref[[3]]) %in% names(x)),
+    logical(1)
+  )
+  if (any(!relnames_exist))
+    msg <- c(msg, paste(lab, "has references over non-present relation names"))
+
+  # this could be relaxed
+  nonself_reference <- vapply(elformed_refs, \(ref) ref[[1]] != ref[[3]], logical(1))
+  if (any(!nonself_reference))
+    msg <- c(msg, paste(lab, "has self-references in references"))
+
+  if (same_attr_name) {
+    same_attr_names <- vapply(
+      elformed_refs,
+      \(ref) identical(ref[[2]], ref[[4]]),
+      logical(1)
+    )
+    if (any(!same_attr_names))
+      msg <- c(msg, paste(lab, "has non-matching attribute names in references"))
   }
+
+  unique_child_attrs <- vapply(
+    elformed_refs,
+    \(ref) !anyDuplicated(ref[[2]]),
+    logical(1)
+  )
+  if (any(!unique_child_attrs))
+    msg <- c(msg, paste(lab, "has references with non-unique child attribute names"))
+
+  unique_parent_attrs <- vapply(
+    elformed_refs,
+    \(ref) !anyDuplicated(ref[[2]]),
+    logical(1)
+  )
+  if (any(!unique_parent_attrs))
+    msg <- c(msg, paste(lab, "has references with non-unique parent attribute names"))
+
+  nonempty_attr_sets <- vapply(
+    elformed_refs,
+    \(ref) all(lengths(ref[c(2, 4)]) > 0),
+    logical(1)
+  )
+  if (any(!nonempty_attr_sets))
+    msg <- c(msg, paste(lab, "has references with zero-length attribute sets"))
+
+  child_attrs_exist <- vapply(
+    elformed_refs,
+    \(ref) all(ref[[2]] %in% attrs[[ref[[1]]]]),
+    logical(1)
+  )
+  if (any(!child_attrs_exist))
+    msg <- c(msg, paste(lab, "has invalid child attribute names in references"))
+
+  parent_attrs_exist <- vapply(
+    elformed_refs,
+    \(ref) all(ref[[2]] %in% attrs[[ref[[1]]]]),
+    logical(1)
+  )
+  if (any(!parent_attrs_exist))
+    msg <- c(msg, paste(lab, "has invalid parent attribute names in references"))
+
   if (single_key_pairs) {
     relnames_df <- as.data.frame(do.call(
       rbind,
       lapply(references, \(r) unlist(r[c(1L, 3L)]))
     ))
     if (anyDuplicated(relnames_df))
-      fail(sprintf(
-        "%s has reference pairs with multiple keys",
-        act$lab
-      ))
+      msg <- c(msg, paste(lab, "has reference pairs with multiple keys"))
   }
 
-  invisible(act$val)
+  msg
 }
 
-is_valid_database_schema <- function(
+expect_valid_references <- function(
+  x,
+  same_attr_name = FALSE,
+  single_key_pairs = FALSE
+) {
+  msg <- strexpect_valid_references(x, same_attr_name, single_key_pairs)
+  if (length(msg) == 0)
+    succeed()
+  else
+    fail(paste(msg, collapse = "\n"))
+}
+
+expect_valid_database_schema <- function(
   x,
   unique = FALSE,
   single_empty_key = FALSE,
   same_attr_name = FALSE,
   single_key_pairs = FALSE
 ) {
-  is_valid_relation_schema(x, unique, single_empty_key)
-  expect_s3_class(x, "database_schema")
-  is_valid_references(x, same_attr_name, single_key_pairs)
+  if (!inherits(x, "database_schema"))
+    return(fail(paste("x is not a relation; classes are", toString(class(x)))))
+  expect_valid_relation_schema(x, unique, single_empty_key)
+  expect_valid_references(x, same_attr_name, single_key_pairs)
 }
 
-is_valid_relation <- function(x, unique = FALSE, single_empty_key = FALSE) {
-  expect_s3_class(x, "relation")
+strexpect_valid_relation <- function(x, unique = FALSE, single_empty_key = FALSE) {
+  if (!inherits(x, "relation"))
+    return(paste("x is not a relation; classes are", toString(class(x))))
 
-  expect_true(is.character(names(x)))
-  expect_true(!anyDuplicated(names(x)))
-  expect_true(all(nchar(names(x)) > 0L))
+  msg <- character()
+
+  if (!is.character(names(x))) {
+    msg <- c(msg, paste("names are not character:", class(names(x))))
+  }else{
+    if (anyDuplicated(names(x)))
+      msg <- c(msg, paste("there are duplicate names in", toString(names(x))))
+    if (any(nchar(names(x)) == 0L))
+      msg <- c(msg, "there are length-zero names")
+  }
 
   rel_keys <- keys(x)
   rel_key_els <- lapply(rel_keys, \(ks) unique(unlist(ks)))
   rel_attrs <- attrs(x)
+
   key_attrs_first <- mapply(
     \(ks, as) identical(as[seq_along(ks)], ks),
     rel_key_els,
     rel_attrs
   )
-  expect_true(all(key_attrs_first))
+  if (!all(key_attrs_first))
+    msg <- c(msg, "there are relations with their key attrs not given first")
+
+  if (!all(vapply(
+    rel_keys,
+    \(ks) all(vapply(ks, \(k) !is.unsorted(match(k, attrs_order(x))), logical(1))),
+    logical(1)
+  )))
+    msg <- c(msg, "there are relation keys with attributes not in order")
+
   nonprime_attrs <- Map(
     \(ks, as) as[-seq_along(ks)],
     rel_key_els,
     rel_attrs
   )
-  expect_true(all(vapply(
-    rel_keys,
-    \(ks) all(vapply(ks, \(k) !is.unsorted(match(k, attrs_order(x))), logical(1))),
-    logical(1)
-  )))
-  expect_true(all(vapply(
+  if (!all(vapply(
     nonprime_attrs,
     \(as) all(vapply(as, \(a) !is.unsorted(match(a, attrs_order(x))), logical(1))),
     logical(1)
   )))
+    msg <- c(msg, "there are relations with non-key attributes not in order")
+
   expect_true(all(vapply(rel_keys, Negate(anyDuplicated), logical(1))))
-  if (single_empty_key)
-    expect_lte(sum(vapply(rel_keys, identical, logical(1), list(character()))), 1L)
-  expect_true(all(mapply(
+  if (!all(vapply(rel_keys, Negate(anyDuplicated), logical(1))))
+    msg <- c(msg, "there are duplicate keys")
+
+  if (
+    single_empty_key &&
+    sum(vapply(rel_keys, identical, logical(1), list(character()))) > 1
+  )
+    msg <- c(
+      msg,
+      "single_empty_key = TRUE, and there are multiple relations with an empty key"
+    )
+
+  if (!all(mapply(
     \(recs, ks) all(vapply(
       ks,
       \(k) !df_anyDuplicated(recs[, k, drop = FALSE]),
@@ -265,8 +351,15 @@ is_valid_relation <- function(x, unique = FALSE, single_empty_key = FALSE) {
     records(x),
     rel_keys
   )))
+    msg <- c(
+      msg,
+      "there are violated keys"
+    )
+
   if (unique) {
-    expect_true(!anyDuplicated(x))
+    if (anyDuplicated(x))
+      msg <- c(msg, "unique = TRUE and there are duplicate relations")
+
     implied_fds <- functional_dependency(
       unlist(
         Map(
@@ -283,42 +376,140 @@ is_valid_relation <- function(x, unique = FALSE, single_empty_key = FALSE) {
       ),
       attrs_order(x)
     )
-    expect_true(!anyDuplicated(implied_fds))
+    if (anyDuplicated(implied_fds))
+      msg <- c(msg, "there are duplicate implied FDs")
   }
+
+  msg
 }
 
-is_valid_database <- function(
+expect_valid_relation <- function(x, unique = FALSE, single_empty_key = FALSE) {
+  msg <- strexpect_valid_relation(x, unique, single_empty_key)
+  if (length(msg) == 0)
+    succeed()
+  else
+    fail(paste(msg, collapse = "\n"))
+}
+
+strexpect_valid_database <- function(
   x,
   unique = FALSE,
   single_empty_key = FALSE,
   same_attr_name = FALSE,
   single_key_pairs = FALSE
 ) {
-  is_valid_relation(x, unique, single_empty_key)
-  expect_s3_class(x, "database")
+  if (!inherits(x, "database"))
+    return(paste("x is not a database; classes are", toString(class(x))))
+
+  msg <- strexpect_valid_relation(x, unique, single_empty_key)
 
   fks <- references(x)
-  is_valid_references(x, same_attr_name, single_key_pairs)
+  valid_reftest <- try(
+    expect_valid_references(x, same_attr_name, single_key_pairs),
+    silent = TRUE
+  )
+  if (class(valid_reftest)[[1]] == "try-error")
+    msg <- c(
+      msg,
+      attr(x, "condition")$message
+    )
+
   recs <- records(x)
-  for (fk in fks) {
-    expect_true(identical(
-      nrow(records(x)[[fk[[1]]]]),
-      nrow(df_join(
-        recs[[fk[[1]]]][, fk[[2]], drop = FALSE],
-        recs[[fk[[3]]]][, fk[[4]], drop = FALSE],
-        by.x = fk[[2]],
-        by.y = fk[[4]]
-      ))))
+  for (n in seq_along(fks)) {
+    fk <- fks[[n]]
+    child_nrow <- nrow(records(x)[[fk[[1]]]])
+    join_nrow <- nrow(df_join(
+      recs[[fk[[1]]]][, fk[[2]], drop = FALSE],
+      recs[[fk[[3]]]][, fk[[4]], drop = FALSE],
+      by.x = fk[[2]],
+      by.y = fk[[4]]
+    ))
+    if (!identical(child_nrow, join_nrow))
+      msg <- c(
+        msg,
+        paste(
+          "foreign key",
+          n,
+          "has differing child/join record counts:",
+          child_nrow,
+          "vs",
+          join_nrow
+        )
+      )
   }
+
   fk_children <- vapply(fks, "[[", character(1), 1L)
   fk_parents <- vapply(fks, "[[", character(1), 3L)
   fk_parent_sets <- split(fk_parents, fk_children)
   children <- names(fk_parent_sets)
   nonchildren <- setdiff(names(x), children)
+
+  msg
+}
+
+expect_valid_database <- function(
+  x,
+  unique = FALSE,
+  single_empty_key = FALSE,
+  same_attr_name = FALSE,
+  single_key_pairs = FALSE
+) {
+  msg <- strexpect_valid_database(
+    x,
+    unique,
+    single_empty_key,
+    same_attr_name,
+    single_key_pairs
+  )
+  if (length(msg) == 0)
+    succeed()
+  else
+    fail(paste(msg, collapse = "\n"))
 }
 
 expect_identical_unordered_table <- function(new, original) {
   expect_true(df_equiv(new, original, digits = NA))
+}
+
+gen_df_and_type_change <- function(
+  nrow,
+  ncol,
+  remove_dup_rows = FALSE
+) {
+  changes <- list(
+    logical = c("integer", "numeric", "character"),
+    integer = c("numeric", "character"),
+    numeric = c("character"),
+    character = c("logical"),
+    factor = c("integer", "numeric", "character"),
+    list = character(),
+    matrix = character(),
+    data.frame = character()
+  )
+  gen_df(nrow, ncol, minrow = 1L, mincol = 1L, remove_dup_rows) |>
+    gen.and_then(\(df) list(df, gen.sample(ncol(df)))) |>
+    gen.and_then(uncurry(\(df, attr) {
+      change_sets <- match(names(changes), class(df[[attr]]))
+      attr_class <- class(df[[attr]])[[1]]
+      if (all(is.na(change_sets)))
+        stop(paste("no change set for", attr_class, "class"))
+      change_ind <- which.min(change_sets)
+      stopifnot(length(change_ind) == 1, !is.na(change_ind))
+      change_set <- changes[[change_ind]]
+      list(
+        gen.pure(df),
+        gen.pure(attr),
+        if (length(change_set) == 0)
+          gen.pure(attr_class)
+        else
+          gen.element(change_set)
+      )
+    })) |>
+    gen.with(uncurry(\(df, attr, new_class) {
+      permed <- df
+      permed[[attr]] <- as(permed[[attr]], new_class)
+      list(df, permed)
+    }))
 }
 
 gen_df <- function(
@@ -328,13 +519,13 @@ gen_df <- function(
   mincol = 0L,
   remove_dup_rows = FALSE,
   digits = NA,
-  variant = c("data.frame", "tibble")
+  variant = c("data.frame", "tibble"),
+  atomic = FALSE
 ) {
-  asable_classes <- c("logical", "integer", "numeric", "character", "factor")
   list(
     gen.element(seq.int(min(mincol, ncol), ncol)) |>
       gen.and_then(\(n) list(
-        classes = gen.element(asable_classes) |> gen.c(of = n),
+        classes = gen.df_colclass(atomic) |> gen.c(of = n),
         nms = gen_attr_names(n, 9)
       )),
     n_records = gen.element(seq.int(min(minrow, nrow), nrow)),
@@ -342,6 +533,20 @@ gen_df <- function(
   ) |>
     gen.with(\(lst) c(lst[[1]], lst[2], list(remove_dup_rows = remove_dup_rows), lst[3])) |>
     gen.and_then(uncurry(with_args(gen.df_fixed_ranges, digits = digits)))
+}
+
+gen.df_colclass <- function(atomic) {
+  asable_classes <- c(
+    "logical",
+    "integer",
+    "numeric",
+    "character",
+    "factor",
+    if (!atomic) "list",
+    if (!atomic) "matrix",
+    if (!atomic) "data.frame"
+  )
+  gen.element(asable_classes)
 }
 
 gen.df_fixed_ranges <- function(
@@ -359,19 +564,58 @@ gen.df_fixed_ranges <- function(
     tibble = with_args(tibble::as_tibble, .name_repair = "minimal")
   )
   as_fns <- list(
-    logical = gen.element(c(FALSE, TRUE, NA)),
-    integer = gen.element(c(-5:5, NA_integer_)),
-    numeric = gen.numeric(),
-    character = gen.element(c("FALSE", "TRUE", NA_character_)),
+    logical = gen.element(c(FALSE, TRUE, NA)) |>
+      gen.c(of = n_records) |>
+      gen.with(as.logical),
+    integer = gen.choice(
+      gen.shrink(
+        function(x) as.integer(shrink.towards(0L)(x)),
+        gen.element(-5:5)
+      ),
+      gen.pure(NA_integer_),
+      prob = c(10, 1)
+    ) |>
+      gen.c(of = n_records) |>
+      gen.with(as.integer),
+    numeric = gen.numeric() |>
+      gen.c(of = n_records) |>
+      gen.with(as.numeric) |>
+      gen.and_then(with_args(gen.float_coincide, digits = digits)),
+    character = gen.element(c("FALSE", "TRUE", NA_character_)) |>
+      gen.c(of = n_records) |>
+      gen.with(as.character),
     factor = gen.element(c("FALSE", "TRUE", NA_character_)) |>
-      gen.with(with_args(factor, levels = c("FALSE", "TRUE")))
-  )
-  inits <- list(
-    logical = logical(),
-    integer = integer(),
-    numeric = numeric(),
-    character = character(),
-    factor = factor(character(), levels = c("FALSE", "TRUE"))
+      gen.c(of = n_records) |>
+      gen.with(with_args(factor, levels = c("FALSE", "TRUE"))),
+    list = gen.list_element() |>
+      gen.list(of = n_records),
+    matrix = gen.element(0:2) |>
+      gen.and_then(\(n) {
+        gen.choice(
+          gen.element(c(FALSE, TRUE, NA)) |>
+            gen.c(of = n*n_records) |>
+            gen.with(as.logical),
+          gen.element(c(-5:5, NA_integer_)) |>
+            gen.c(of = n*n_records) |>
+            gen.with(as.integer),
+          gen.numeric() |>
+            gen.c(of = n*n_records) |>
+            gen.with(as.numeric),
+          gen.element(c("FALSE", "TRUE", NA_character_)) |>
+            gen.c(of = n*n_records) |>
+            gen.with(as.character),
+          gen.element(c("FALSE", "TRUE", NA_character_)) |>
+            gen.c(of = n*n_records) |>
+            gen.with(with_args(factor, levels = c("FALSE", "TRUE")))
+        )
+      }) |>
+      gen.with(with_args(matrix, nrow = n_records)),
+    data.frame = gen_df(
+      nrow = n_records,
+      ncol = 3,
+      minrow = n_records,
+      mincol = 0
+    )
   )
   if (length(classes) == 0L)
     return(
@@ -386,27 +630,43 @@ gen.df_fixed_ranges <- function(
       # gen.sample only shrinks by reordering,
       # and gen.c incorrectly returns NULL when size = 0,
       # so we need to unlist "manually"
-      as_fns[[cl]] |>
-        gen.list(of = n_records) |>
-        gen.with(\(x) Reduce(
-          c,
-          x,
-          init = inits[[cl]]
-        )) |>
-        gen.and_then(\(x) {
-          if (cl %in% c("numeric", "complex"))
-            gen.float_coincide(x, digits)
-          else
-            gen.pure(x)
-        })
+      as_fns[[cl]]
     }
   ) |>
     gen.with(
-      with_args(setNames, nm = nms) %>>%
-        with_args(as.data.frame, check.names = FALSE) %>>%
-        (if (remove_dup_rows) unique else identity)
+      with_args(as.general.df, len = n_records) %>>%
+        with_args(setNames, nm = nms) %>>%
+        (if (remove_dup_rows) df_unique else identity)
     ) |>
     gen.with(variant)
+}
+
+as.general.df <- function(len, cols) {
+  res <- data.frame(seq_len(len))[, FALSE, drop = FALSE]
+  for (n in seq_along(cols)) {
+    res[[n]] <- cols[[n]]
+  }
+  names(res) <- names(cols)
+  res
+}
+
+gen.list_element <- function() {
+  gen.choice( # list where each element is NULL or one of the other types
+    gen.pure(NULL),
+    gen.element(c(FALSE, TRUE, NA)) |>
+      gen.c(from = 0, to = 2),
+    gen.element(c(-5:5, NA_integer_)) |>
+      gen.c(from = 0, to = 2),
+    gen.numeric() |>
+      gen.c(from = 0, to = 2),
+    gen.element(c("FALSE", "TRUE", NA_character_)) |>
+      gen.c(from = 0, to = 2),
+    gen.element(c("FALSE", "TRUE", NA_character_)) |>
+      gen.c(from = 0, to = 2) |>
+      gen.with(with_args(factor, levels = c("FALSE", "TRUE"))),
+    gen.list_element() |>
+      gen.list(from = 0, to = 2)
+  )
 }
 
 gen.float_coincide <- function(x, digits) {
@@ -647,7 +907,7 @@ gen.relation <- function(
     gen.element(variant)
   ) |>
     gen.and_then(uncurry(
-      \(rs, var) gen.relation_from_schema(rs, rows_from, rows_to, var)
+      \(rs, var) gen.relation_from_schema(rs, rows_from, rows_to, variant = var)
     ))
 }
 
@@ -659,20 +919,26 @@ gen.relation_from_schema <- function(
   variant = c("data.frame", "tibble")
 ) {
   variant <- match.arg(variant)
-  gen.pure(create(rs)) |>
-    gen.and_then(\(empty_rel) {
-      r_attrs <- attrs(empty_rel)
+  used_classes <- gen.df_colclass(atomic = TRUE) |>
+    gen.c(of = length(attrs_order(rs))) |>
+    gen.with(as.character) |>
+    gen.with(with_args(stats::setNames, nm = (attrs_order(rs))))
+  used_classes |>
+    gen.and_then(\(classes) {
+      r_attrs <- attrs(rs)
       r_ncols <- lengths(r_attrs)
-      r_keys <- keys(empty_rel)
+      r_keys <- keys(rs)
       lapply(
-        setNames(seq_along(empty_rel), names(empty_rel)),
+        setNames(seq_along(rs), names(rs)),
         \(n) {
           ks <- r_keys[[n]]
+          as <- r_attrs[[n]]
+          cls <- classes[as]
           gen.element(rows_from:rows_to) |>
             gen.and_then(with_args(
               gen.df_fixed_ranges,
-              classes = rep("logical", r_ncols[[n]]),
-              nms = r_attrs[[n]],
+              classes = cls,
+              nms = as,
               remove_dup_rows = TRUE,
               digits = digits,
               variant = variant
@@ -683,7 +949,10 @@ gen.relation_from_schema <- function(
             ))
         }
       ) |>
-        gen.with(with_args(relation_nocheck, attrs_order = attrs_order(empty_rel)))
+        gen.with(\(rels) {
+          empty_rel <- create(rs)
+          relation_nocheck(rels, attrs_order = attrs_order(empty_rel))
+        })
     })
 }
 
@@ -775,14 +1044,18 @@ remove_violated_references <- function(references, relation) {
       child <- recs[[rel[[1]]]][, rel[[2]], drop = FALSE]
       parent <- recs[[rel[[3]]]][, rel[[4]], drop = FALSE]
       identical(
-        nrow(child),
-        nrow(df_join(
-          child,
-          parent,
-          by.x = rel[[2]],
-          by.y = rel[[4]]
-        ))
-      )
+        vapply(child, \(x) class(x)[[1]], character(1)),
+        vapply(parent, \(x) class(x)[[1]], character(1))
+      ) &&
+        identical(
+          nrow(child),
+          nrow(df_join(
+            child,
+            parent,
+            by.x = rel[[2]],
+            by.y = rel[[4]]
+          ))
+        )
     },
     logical(1)
   )]
@@ -952,7 +1225,7 @@ gen.database <- function(
     gen.element(variant)
   ) |>
     gen.and_then(uncurry(\(ds, var) {
-      gen.relation_from_schema(ds, rows_from, rows_to, var) |>
+      gen.relation_from_schema(ds, rows_from, rows_to, variant = var) |>
         gen.with(
           with_args(
             remove_reference_violations,
@@ -1185,6 +1458,9 @@ rel2df <- function(rel, relations) {
 # functional utility functions for tests
 `%>>%` <- function(fn1, fn2) function(...) fn2(fn1(...))
 biapply <- function(fn1, fn2) function(x) list(fn1(x), fn2(x))
+bi <- function(fn, fn1, fn2) {
+  function(x) fn(fn1(x), fn2(x))
+}
 expect_bi <- function(logical_fn, fn1, fn2) {
   function(x) expect_true(logical_fn(fn1(x), fn2(x)))
 }
@@ -1204,6 +1480,7 @@ apply_both <- function(fn1, fn2) function(x) {fn1(x); fn2(x)}
 dup <- function(x) list(x, x)
 onLeft <- function(f) function(x) list(f(x[[1]]), x[[2]])
 onRight <- function(f) function(x) list(x[[1]], f(x[[2]]))
+fand <- function(f, g) function(...) f(...) & g(...)
 
 concatenate_keeps_attribute_order <- function(...) {
   lst <- list(...)
@@ -1222,4 +1499,18 @@ concatenate_keeps_attribute_order <- function(...) {
     lapply(lst, attrs_order),
     lapply(lst, \(x) intersect(attrs_order(res), attrs_order(x)))
   )))
+}
+
+make.unique_after <- function(x, pre) {
+  if (length(pre) == 0)
+    return(x)
+  stopifnot(!anyDuplicated(pre))
+  make.unique(c(pre, x))[-seq_along(pre)]
+}
+with_timeout <- function(expr, timeout = 5) {
+  R.utils::withTimeout(
+    expr,
+    timeout = timeout,
+    onTimeout = "silent"
+  )
 }

@@ -1734,8 +1734,8 @@ prefer.</p>
   maybe_plot &lt;- function(x) invisible(NULL)
 }</code></pre>
 <pre class="r"><code>show(chick_db)</code></pre>
-<div id="htmlwidget-2167b305c1a54eeb32cb" style="width:100%;height:480px;" class="grViz html-widget"></div>
-<script type="application/json" data-for="htmlwidget-2167b305c1a54eeb32cb">{"x":{"diagram":"digraph {\n  rankdir = \"LR\"\n  node [shape=plaintext];\n\n  \"Chick\" [label = <\n    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n    <TR><TD COLSPAN=\"3\">Chick (50 records)<\/TD><\/TR>\n    <TR><TD PORT=\"TO_chick\">Chick<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_chick\">ordered<\/TD><\/TR>\n    <TR><TD PORT=\"TO_diet\">Diet<\/TD><TD><\/TD><TD PORT=\"FROM_diet\">factor<\/TD><\/TR>\n    <\/TABLE>>];\n  \"Time_Chick\" [label = <\n    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n    <TR><TD COLSPAN=\"3\">Time_Chick (578 records)<\/TD><\/TR>\n    <TR><TD PORT=\"TO_time\">Time<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_time\">numeric<\/TD><\/TR>\n    <TR><TD PORT=\"TO_chick\">Chick<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_chick\">ordered<\/TD><\/TR>\n    <TR><TD PORT=\"TO_weight\">weight<\/TD><TD><\/TD><TD PORT=\"FROM_weight\">numeric<\/TD><\/TR>\n    <\/TABLE>>];\n\n  \"Time_Chick\":FROM_chick -> \"Chick\":TO_chick;\n}\n","config":{"engine":"dot","options":null}},"evals":[],"jsHooks":[]}</script>
+<div id="htmlwidget-089f84cc159514f4fd37" style="width:100%;height:480px;" class="grViz html-widget"></div>
+<script type="application/json" data-for="htmlwidget-089f84cc159514f4fd37">{"x":{"diagram":"digraph {\n  rankdir = \"LR\"\n  node [shape=plaintext];\n\n  \"Chick\" [label = <\n    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n    <TR><TD COLSPAN=\"3\">Chick (50 records)<\/TD><\/TR>\n    <TR><TD PORT=\"TO_chick\">Chick<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_chick\">ordered<\/TD><\/TR>\n    <TR><TD PORT=\"TO_diet\">Diet<\/TD><TD><\/TD><TD PORT=\"FROM_diet\">factor<\/TD><\/TR>\n    <\/TABLE>>];\n  \"Time_Chick\" [label = <\n    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n    <TR><TD COLSPAN=\"3\">Time_Chick (578 records)<\/TD><\/TR>\n    <TR><TD PORT=\"TO_time\">Time<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_time\">numeric<\/TD><\/TR>\n    <TR><TD PORT=\"TO_chick\">Chick<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_chick\">ordered<\/TD><\/TR>\n    <TR><TD PORT=\"TO_weight\">weight<\/TD><TD><\/TD><TD PORT=\"FROM_weight\">numeric<\/TD><\/TR>\n    <\/TABLE>>];\n\n  \"Time_Chick\":FROM_chick -> \"Chick\":TO_chick;\n}\n","config":{"engine":"dot","options":null}},"evals":[],"jsHooks":[]}</script>
 <p>In an interactive session, the simplest way to do this is to call
 <code>DiagrammeR::grViz</code> on the output from <code>gv</code>. In a
 Quarto file, we can write the output to a file, and call that file from
@@ -1820,9 +1820,11 @@ FDHitsSep, a depth-first search algorithm. We run this by using the
 <pre class="r"><code>deps &lt;- discover(ChickWeight, progress = TRUE)</code></pre>
 <pre><code>## formatting numerical/complex variables with 7 significant digits
 ## simplifying data types
+## 4 attributes considered as determinants
+## 4 attributes considered as non-fixed dependants
 ## calculating single-attribute PLIs
 ## sampling difference sets
-## 7 initial diffsets
+## 8 initial diffsets
 ## 
 ## dependant weight
 ## dependant Time
@@ -1831,13 +1833,13 @@ FDHitsSep, a depth-first search algorithm. We run this by using the
 ## 
 ## FDHitsSep complete
 ## 9 final diffsets
-## 10 nodes visited
+## 9 nodes visited
 ## 6 partitions cached</code></pre>
 <pre class="r"><code>deps</code></pre>
 <pre><code>## 2 functional dependencies
 ## 4 attributes: weight, Time, Chick, Diet
-## Time, Chick -&gt; weight
-##       Chick -&gt; Diet</code></pre>
+## {Time, Chick} -&gt; weight
+##       {Chick} -&gt; Diet</code></pre>
 <p>The result is a list of <em>functional dependencies</em>, in the
 format <code>determinant -&gt; dependant</code>, with an attribute named
 <code>attrs_order</code> that gives all the attribute names in their
@@ -1869,8 +1871,8 @@ schema</code></pre>
 ##   key 1: Time, Chick</code></pre>
 <p>We can also plot this schema:</p>
 <pre class="r"><code>show(schema)</code></pre>
-<div id="htmlwidget-142299a174c40b3eb477" style="width:100%;height:480px;" class="grViz html-widget"></div>
-<script type="application/json" data-for="htmlwidget-142299a174c40b3eb477">{"x":{"diagram":"digraph {\n  rankdir = \"LR\"\n  node [shape=plaintext];\n\n  \"Chick\" [label = <\n    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n    <TR><TD COLSPAN=\"2\">Chick<\/TD><\/TR>\n    <TR><TD PORT=\"TO_chick\">Chick<\/TD><TD PORT=\"FROM_chick\" BGCOLOR=\"black\"><\/TD><\/TR>\n    <TR><TD PORT=\"TO_diet\">Diet<\/TD><TD PORT=\"FROM_diet\"><\/TD><\/TR>\n    <\/TABLE>>];\n  \"Time_Chick\" [label = <\n    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n    <TR><TD COLSPAN=\"2\">Time_Chick<\/TD><\/TR>\n    <TR><TD PORT=\"TO_time\">Time<\/TD><TD PORT=\"FROM_time\" BGCOLOR=\"black\"><\/TD><\/TR>\n    <TR><TD PORT=\"TO_chick\">Chick<\/TD><TD PORT=\"FROM_chick\" BGCOLOR=\"black\"><\/TD><\/TR>\n    <TR><TD PORT=\"TO_weight\">weight<\/TD><TD PORT=\"FROM_weight\"><\/TD><\/TR>\n    <\/TABLE>>];\n}\n","config":{"engine":"dot","options":null}},"evals":[],"jsHooks":[]}</script>
+<div id="htmlwidget-0ad5c9adab30abf702e3" style="width:100%;height:480px;" class="grViz html-widget"></div>
+<script type="application/json" data-for="htmlwidget-0ad5c9adab30abf702e3">{"x":{"diagram":"digraph {\n  rankdir = \"LR\"\n  node [shape=plaintext];\n\n  \"Chick\" [label = <\n    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n    <TR><TD COLSPAN=\"2\">Chick<\/TD><\/TR>\n    <TR><TD PORT=\"TO_chick\">Chick<\/TD><TD PORT=\"FROM_chick\" BGCOLOR=\"black\"><\/TD><\/TR>\n    <TR><TD PORT=\"TO_diet\">Diet<\/TD><TD PORT=\"FROM_diet\"><\/TD><\/TR>\n    <\/TABLE>>];\n  \"Time_Chick\" [label = <\n    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n    <TR><TD COLSPAN=\"2\">Time_Chick<\/TD><\/TR>\n    <TR><TD PORT=\"TO_time\">Time<\/TD><TD PORT=\"FROM_time\" BGCOLOR=\"black\"><\/TD><\/TR>\n    <TR><TD PORT=\"TO_chick\">Chick<\/TD><TD PORT=\"FROM_chick\" BGCOLOR=\"black\"><\/TD><\/TR>\n    <TR><TD PORT=\"TO_weight\">weight<\/TD><TD PORT=\"FROM_weight\"><\/TD><\/TR>\n    <\/TABLE>>];\n}\n","config":{"engine":"dot","options":null}},"evals":[],"jsHooks":[]}</script>
 <p>This is similar to the database plot given before, but there is some
 information not present, that requires the data frame itself: record
 counts, and data classes. We do have automatically-generated names for
@@ -1912,8 +1914,8 @@ linked_schema</code></pre>
 <p>Plotting this updated database schema shows the same relation schemas
 as before, linked together by foreign key references:</p>
 <pre class="r"><code>show(linked_schema)</code></pre>
-<div id="htmlwidget-60e0d2e7e904beeecc71" style="width:100%;height:480px;" class="grViz html-widget"></div>
-<script type="application/json" data-for="htmlwidget-60e0d2e7e904beeecc71">{"x":{"diagram":"digraph {\n  rankdir = \"LR\"\n  node [shape=plaintext];\n\n  \"Chick\" [label = <\n    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n    <TR><TD COLSPAN=\"2\">Chick<\/TD><\/TR>\n    <TR><TD PORT=\"TO_chick\">Chick<\/TD><TD PORT=\"FROM_chick\" BGCOLOR=\"black\"><\/TD><\/TR>\n    <TR><TD PORT=\"TO_diet\">Diet<\/TD><TD PORT=\"FROM_diet\"><\/TD><\/TR>\n    <\/TABLE>>];\n  \"Time_Chick\" [label = <\n    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n    <TR><TD COLSPAN=\"2\">Time_Chick<\/TD><\/TR>\n    <TR><TD PORT=\"TO_time\">Time<\/TD><TD PORT=\"FROM_time\" BGCOLOR=\"black\"><\/TD><\/TR>\n    <TR><TD PORT=\"TO_chick\">Chick<\/TD><TD PORT=\"FROM_chick\" BGCOLOR=\"black\"><\/TD><\/TR>\n    <TR><TD PORT=\"TO_weight\">weight<\/TD><TD PORT=\"FROM_weight\"><\/TD><\/TR>\n    <\/TABLE>>];\n\n  \"Time_Chick\":FROM_chick -> \"Chick\":TO_chick;\n}\n","config":{"engine":"dot","options":null}},"evals":[],"jsHooks":[]}</script>
+<div id="htmlwidget-b39dc93431ada9e7cf43" style="width:100%;height:480px;" class="grViz html-widget"></div>
+<script type="application/json" data-for="htmlwidget-b39dc93431ada9e7cf43">{"x":{"diagram":"digraph {\n  rankdir = \"LR\"\n  node [shape=plaintext];\n\n  \"Chick\" [label = <\n    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n    <TR><TD COLSPAN=\"2\">Chick<\/TD><\/TR>\n    <TR><TD PORT=\"TO_chick\">Chick<\/TD><TD PORT=\"FROM_chick\" BGCOLOR=\"black\"><\/TD><\/TR>\n    <TR><TD PORT=\"TO_diet\">Diet<\/TD><TD PORT=\"FROM_diet\"><\/TD><\/TR>\n    <\/TABLE>>];\n  \"Time_Chick\" [label = <\n    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n    <TR><TD COLSPAN=\"2\">Time_Chick<\/TD><\/TR>\n    <TR><TD PORT=\"TO_time\">Time<\/TD><TD PORT=\"FROM_time\" BGCOLOR=\"black\"><\/TD><\/TR>\n    <TR><TD PORT=\"TO_chick\">Chick<\/TD><TD PORT=\"FROM_chick\" BGCOLOR=\"black\"><\/TD><\/TR>\n    <TR><TD PORT=\"TO_weight\">weight<\/TD><TD PORT=\"FROM_weight\"><\/TD><\/TR>\n    <\/TABLE>>];\n\n  \"Time_Chick\":FROM_chick -> \"Chick\":TO_chick;\n}\n","config":{"engine":"dot","options":null}},"evals":[],"jsHooks":[]}</script>
 </div>
 <div id="decomposing-the-original-relation" class="section level2">
 <h2>Decomposing the original relation</h2>
@@ -1923,8 +1925,8 @@ results in a normalised database, as we got from using
 <code>autodb</code>:</p>
 <pre class="r"><code>db &lt;- decompose(ChickWeight, linked_schema)</code></pre>
 <pre class="r"><code>show(db)</code></pre>
-<div id="htmlwidget-e328480b0734ac7694d7" style="width:100%;height:480px;" class="grViz html-widget"></div>
-<script type="application/json" data-for="htmlwidget-e328480b0734ac7694d7">{"x":{"diagram":"digraph {\n  rankdir = \"LR\"\n  node [shape=plaintext];\n\n  \"Chick\" [label = <\n    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n    <TR><TD COLSPAN=\"3\">Chick (50 records)<\/TD><\/TR>\n    <TR><TD PORT=\"TO_chick\">Chick<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_chick\">ordered<\/TD><\/TR>\n    <TR><TD PORT=\"TO_diet\">Diet<\/TD><TD><\/TD><TD PORT=\"FROM_diet\">factor<\/TD><\/TR>\n    <\/TABLE>>];\n  \"Time_Chick\" [label = <\n    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n    <TR><TD COLSPAN=\"3\">Time_Chick (578 records)<\/TD><\/TR>\n    <TR><TD PORT=\"TO_time\">Time<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_time\">numeric<\/TD><\/TR>\n    <TR><TD PORT=\"TO_chick\">Chick<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_chick\">ordered<\/TD><\/TR>\n    <TR><TD PORT=\"TO_weight\">weight<\/TD><TD><\/TD><TD PORT=\"FROM_weight\">numeric<\/TD><\/TR>\n    <\/TABLE>>];\n\n  \"Time_Chick\":FROM_chick -> \"Chick\":TO_chick;\n}\n","config":{"engine":"dot","options":null}},"evals":[],"jsHooks":[]}</script>
+<div id="htmlwidget-cce5d7b71cf0dbe62aed" style="width:100%;height:480px;" class="grViz html-widget"></div>
+<script type="application/json" data-for="htmlwidget-cce5d7b71cf0dbe62aed">{"x":{"diagram":"digraph {\n  rankdir = \"LR\"\n  node [shape=plaintext];\n\n  \"Chick\" [label = <\n    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n    <TR><TD COLSPAN=\"3\">Chick (50 records)<\/TD><\/TR>\n    <TR><TD PORT=\"TO_chick\">Chick<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_chick\">ordered<\/TD><\/TR>\n    <TR><TD PORT=\"TO_diet\">Diet<\/TD><TD><\/TD><TD PORT=\"FROM_diet\">factor<\/TD><\/TR>\n    <\/TABLE>>];\n  \"Time_Chick\" [label = <\n    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n    <TR><TD COLSPAN=\"3\">Time_Chick (578 records)<\/TD><\/TR>\n    <TR><TD PORT=\"TO_time\">Time<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_time\">numeric<\/TD><\/TR>\n    <TR><TD PORT=\"TO_chick\">Chick<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_chick\">ordered<\/TD><\/TR>\n    <TR><TD PORT=\"TO_weight\">weight<\/TD><TD><\/TD><TD PORT=\"FROM_weight\">numeric<\/TD><\/TR>\n    <\/TABLE>>];\n\n  \"Time_Chick\":FROM_chick -> \"Chick\":TO_chick;\n}\n","config":{"engine":"dot","options":null}},"evals":[],"jsHooks":[]}</script>
 </div>
 <div id="rejoining-a-database-back-into-a-data-frame" class="section level2">
 <h2>Rejoining a database back into a data frame</h2>
@@ -2199,8 +2201,8 @@ only expect one relation in the normalised database.</p>
 <p>If we use <code>autodb</code> again, we get the following
 database:</p>
 <pre class="r"><code>show(autodb(as.data.frame(Titanic)))</code></pre>
-<div id="htmlwidget-5fa4bda4feab795e8e12" style="width:100%;height:480px;" class="grViz html-widget"></div>
-<script type="application/json" data-for="htmlwidget-5fa4bda4feab795e8e12">{"x":{"diagram":"digraph {\n  rankdir = \"LR\"\n  node [shape=plaintext];\n\n  \"Class_Survived_Freq\" [label = <\n    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n    <TR><TD COLSPAN=\"3\">Class_Survived_Freq (28 records)<\/TD><\/TR>\n    <TR><TD PORT=\"TO_class\">Class<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_class\">factor<\/TD><\/TR>\n    <TR><TD PORT=\"TO_survived\">Survived<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_survived\">factor<\/TD><\/TR>\n    <TR><TD PORT=\"TO_freq\">Freq<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_freq\">numeric<\/TD><\/TR>\n    <TR><TD PORT=\"TO_age\">Age<\/TD><TD><\/TD><TD PORT=\"FROM_age\">factor<\/TD><\/TR>\n    <\/TABLE>>];\n  \"Sex_Survived_Freq\" [label = <\n    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n    <TR><TD COLSPAN=\"3\">Sex_Survived_Freq (28 records)<\/TD><\/TR>\n    <TR><TD PORT=\"TO_sex\">Sex<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_sex\">factor<\/TD><\/TR>\n    <TR><TD PORT=\"TO_survived\">Survived<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_survived\">factor<\/TD><\/TR>\n    <TR><TD PORT=\"TO_freq\">Freq<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_freq\">numeric<\/TD><\/TR>\n    <TR><TD PORT=\"TO_age\">Age<\/TD><TD><\/TD><TD PORT=\"FROM_age\">factor<\/TD><\/TR>\n    <\/TABLE>>];\n  \"Class_Sex_Age_Survived\" [label = <\n    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n    <TR><TD COLSPAN=\"3\">Class_Sex_Age_Survived (32 records)<\/TD><\/TR>\n    <TR><TD PORT=\"TO_class\">Class<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_class\">factor<\/TD><\/TR>\n    <TR><TD PORT=\"TO_sex\">Sex<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_sex\">factor<\/TD><\/TR>\n    <TR><TD PORT=\"TO_age\">Age<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_age\">factor<\/TD><\/TR>\n    <TR><TD PORT=\"TO_survived\">Survived<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_survived\">factor<\/TD><\/TR>\n    <TR><TD PORT=\"TO_freq\">Freq<\/TD><TD><\/TD><TD PORT=\"FROM_freq\">numeric<\/TD><\/TR>\n    <\/TABLE>>];\n\n  \"Class_Sex_Age_Survived\":FROM_class -> \"Class_Survived_Freq\":TO_class;\n  \"Class_Sex_Age_Survived\":FROM_survived -> \"Class_Survived_Freq\":TO_survived;\n  \"Class_Sex_Age_Survived\":FROM_freq -> \"Class_Survived_Freq\":TO_freq;\n  \"Class_Sex_Age_Survived\":FROM_sex -> \"Sex_Survived_Freq\":TO_sex;\n  \"Class_Sex_Age_Survived\":FROM_survived -> \"Sex_Survived_Freq\":TO_survived;\n  \"Class_Sex_Age_Survived\":FROM_freq -> \"Sex_Survived_Freq\":TO_freq;\n}\n","config":{"engine":"dot","options":null}},"evals":[],"jsHooks":[]}</script>
+<div id="htmlwidget-145aa0027d85daa922a9" style="width:100%;height:480px;" class="grViz html-widget"></div>
+<script type="application/json" data-for="htmlwidget-145aa0027d85daa922a9">{"x":{"diagram":"digraph {\n  rankdir = \"LR\"\n  node [shape=plaintext];\n\n  \"Class_Survived_Freq\" [label = <\n    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n    <TR><TD COLSPAN=\"3\">Class_Survived_Freq (28 records)<\/TD><\/TR>\n    <TR><TD PORT=\"TO_class\">Class<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_class\">factor<\/TD><\/TR>\n    <TR><TD PORT=\"TO_survived\">Survived<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_survived\">factor<\/TD><\/TR>\n    <TR><TD PORT=\"TO_freq\">Freq<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_freq\">numeric<\/TD><\/TR>\n    <TR><TD PORT=\"TO_age\">Age<\/TD><TD><\/TD><TD PORT=\"FROM_age\">factor<\/TD><\/TR>\n    <\/TABLE>>];\n  \"Sex_Survived_Freq\" [label = <\n    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n    <TR><TD COLSPAN=\"3\">Sex_Survived_Freq (28 records)<\/TD><\/TR>\n    <TR><TD PORT=\"TO_sex\">Sex<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_sex\">factor<\/TD><\/TR>\n    <TR><TD PORT=\"TO_survived\">Survived<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_survived\">factor<\/TD><\/TR>\n    <TR><TD PORT=\"TO_freq\">Freq<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_freq\">numeric<\/TD><\/TR>\n    <TR><TD PORT=\"TO_age\">Age<\/TD><TD><\/TD><TD PORT=\"FROM_age\">factor<\/TD><\/TR>\n    <\/TABLE>>];\n  \"Class_Sex_Age_Survived\" [label = <\n    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n    <TR><TD COLSPAN=\"3\">Class_Sex_Age_Survived (32 records)<\/TD><\/TR>\n    <TR><TD PORT=\"TO_class\">Class<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_class\">factor<\/TD><\/TR>\n    <TR><TD PORT=\"TO_sex\">Sex<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_sex\">factor<\/TD><\/TR>\n    <TR><TD PORT=\"TO_age\">Age<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_age\">factor<\/TD><\/TR>\n    <TR><TD PORT=\"TO_survived\">Survived<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_survived\">factor<\/TD><\/TR>\n    <TR><TD PORT=\"TO_freq\">Freq<\/TD><TD><\/TD><TD PORT=\"FROM_freq\">numeric<\/TD><\/TR>\n    <\/TABLE>>];\n\n  \"Class_Sex_Age_Survived\":FROM_class -> \"Class_Survived_Freq\":TO_class;\n  \"Class_Sex_Age_Survived\":FROM_survived -> \"Class_Survived_Freq\":TO_survived;\n  \"Class_Sex_Age_Survived\":FROM_freq -> \"Class_Survived_Freq\":TO_freq;\n  \"Class_Sex_Age_Survived\":FROM_sex -> \"Sex_Survived_Freq\":TO_sex;\n  \"Class_Sex_Age_Survived\":FROM_survived -> \"Sex_Survived_Freq\":TO_survived;\n  \"Class_Sex_Age_Survived\":FROM_freq -> \"Sex_Survived_Freq\":TO_freq;\n}\n","config":{"engine":"dot","options":null}},"evals":[],"jsHooks":[]}</script>
 <p>Oops! The search found some functional dependencies where the count
 could be used to determine another attribute. These are clearly
 spurious: frequency count can’t causally determine age, for example.</p>
@@ -2216,7 +2218,7 @@ inherit from certain classes. In this example, we could exclude
 titanic_deps_freqonly</code></pre>
 <pre><code>## 1 functional dependency
 ## 5 attributes: Class, Sex, Age, Survived, Freq
-## Class, Sex, Age, Survived -&gt; Freq</code></pre>
+## {Class, Sex, Age, Survived} -&gt; Freq</code></pre>
 <p>Alternatively, we could exclude all attributes that inherit from
 “numeric”:</p>
 <pre class="r"><code>stopifnot(setequal(
@@ -2225,8 +2227,8 @@ titanic_deps_freqonly</code></pre>
 ))</code></pre>
 <p>We can also limit the search when using <code>autodb</code>:</p>
 <pre class="r"><code>show(autodb(as.data.frame(Titanic), exclude = &quot;Freq&quot;))</code></pre>
-<div id="htmlwidget-9cf53851661b2c9b26c8" style="width:100%;height:480px;" class="grViz html-widget"></div>
-<script type="application/json" data-for="htmlwidget-9cf53851661b2c9b26c8">{"x":{"diagram":"digraph {\n  rankdir = \"LR\"\n  node [shape=plaintext];\n\n  \"Class_Sex_Age_Survived\" [label = <\n    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n    <TR><TD COLSPAN=\"3\">Class_Sex_Age_Survived (32 records)<\/TD><\/TR>\n    <TR><TD PORT=\"TO_class\">Class<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_class\">factor<\/TD><\/TR>\n    <TR><TD PORT=\"TO_sex\">Sex<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_sex\">factor<\/TD><\/TR>\n    <TR><TD PORT=\"TO_age\">Age<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_age\">factor<\/TD><\/TR>\n    <TR><TD PORT=\"TO_survived\">Survived<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_survived\">factor<\/TD><\/TR>\n    <TR><TD PORT=\"TO_freq\">Freq<\/TD><TD><\/TD><TD PORT=\"FROM_freq\">numeric<\/TD><\/TR>\n    <\/TABLE>>];\n}\n","config":{"engine":"dot","options":null}},"evals":[],"jsHooks":[]}</script>
+<div id="htmlwidget-756af25940f214b286a0" style="width:100%;height:480px;" class="grViz html-widget"></div>
+<script type="application/json" data-for="htmlwidget-756af25940f214b286a0">{"x":{"diagram":"digraph {\n  rankdir = \"LR\"\n  node [shape=plaintext];\n\n  \"Class_Sex_Age_Survived\" [label = <\n    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n    <TR><TD COLSPAN=\"3\">Class_Sex_Age_Survived (32 records)<\/TD><\/TR>\n    <TR><TD PORT=\"TO_class\">Class<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_class\">factor<\/TD><\/TR>\n    <TR><TD PORT=\"TO_sex\">Sex<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_sex\">factor<\/TD><\/TR>\n    <TR><TD PORT=\"TO_age\">Age<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_age\">factor<\/TD><\/TR>\n    <TR><TD PORT=\"TO_survived\">Survived<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_survived\">factor<\/TD><\/TR>\n    <TR><TD PORT=\"TO_freq\">Freq<\/TD><TD><\/TD><TD PORT=\"FROM_freq\">numeric<\/TD><\/TR>\n    <\/TABLE>>];\n}\n","config":{"engine":"dot","options":null}},"evals":[],"jsHooks":[]}</script>
 <p>Excluding numeric attributes as determinants is often useful, because
 we expect non-integer numbers to be a measurement that doesn’t
 co-determine anything else. The main exception is when some attributes
@@ -2237,16 +2239,16 @@ the found dependencies, if we don’t exclude anything:</p>
 titanic_deps</code></pre>
 <pre><code>## 3 functional dependencies
 ## 5 attributes: Class, Sex, Age, Survived, Freq
-##       Sex, Survived, Freq -&gt; Age
-##     Class, Survived, Freq -&gt; Age
-## Class, Sex, Age, Survived -&gt; Freq</code></pre>
+##       {Sex, Survived, Freq} -&gt; Age
+##     {Class, Survived, Freq} -&gt; Age
+## {Class, Sex, Age, Survived} -&gt; Freq</code></pre>
 <p>We can remove the unwanted dependencies, where <code>Age</code> is
 the dependant, using subsetting, <code>Filter</code>, etc.:</p>
 <pre class="r"><code>titanic_deps[dependant(titanic_deps) == &quot;Age&quot;]</code></pre>
 <pre><code>## 2 functional dependencies
 ## 5 attributes: Class, Sex, Age, Survived, Freq
-##   Sex, Survived, Freq -&gt; Age
-## Class, Survived, Freq -&gt; Age</code></pre>
+##   {Sex, Survived, Freq} -&gt; Age
+## {Class, Survived, Freq} -&gt; Age</code></pre>
 </div>
 </div>
 <div id="avoidable-attributes" class="section level1">
@@ -2284,11 +2286,11 @@ Theory of Relational Databases, by David Maier:</p>
 avoid_deps</code></pre>
 <pre><code>## 5 functional dependencies
 ## 5 attributes: A, B, C, D, E
-##    A -&gt; B
-##    B -&gt; A
-## A, C -&gt; D
-## A, C -&gt; E
-## B, D -&gt; C</code></pre>
+##    {A} -&gt; B
+##    {B} -&gt; A
+## {A, C} -&gt; D
+## {A, C} -&gt; E
+## {B, D} -&gt; C</code></pre>
 <pre class="r"><code>normalise(avoid_deps)</code></pre>
 <pre><code>## database schema with 2 relation schemas
 ## 5 attributes: A, B, C, D, E
@@ -2302,8 +2304,8 @@ avoid_deps</code></pre>
 ## A_C.{A} -&gt; A.{A}
 ## A_C.{B} -&gt; A.{B}</code></pre>
 <pre class="r"><code>show(normalise(avoid_deps))</code></pre>
-<div id="htmlwidget-078fc52fcfff31c94708" style="width:100%;height:480px;" class="grViz html-widget"></div>
-<script type="application/json" data-for="htmlwidget-078fc52fcfff31c94708">{"x":{"diagram":"digraph {\n  rankdir = \"LR\"\n  node [shape=plaintext];\n\n  \"A\" [label = <\n    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n    <TR><TD COLSPAN=\"3\">A<\/TD><\/TR>\n    <TR><TD PORT=\"TO_a\">A<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_a\"><\/TD><\/TR>\n    <TR><TD PORT=\"TO_b\">B<\/TD><TD><\/TD><TD PORT=\"FROM_b\" BGCOLOR=\"black\"><\/TD><\/TR>\n    <\/TABLE>>];\n  \"A_C\" [label = <\n    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n    <TR><TD COLSPAN=\"3\">A_C<\/TD><\/TR>\n    <TR><TD PORT=\"TO_a\">A<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_a\"><\/TD><\/TR>\n    <TR><TD PORT=\"TO_c\">C<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_c\"><\/TD><\/TR>\n    <TR><TD PORT=\"TO_b\">B<\/TD><TD><\/TD><TD PORT=\"FROM_b\" BGCOLOR=\"black\"><\/TD><\/TR>\n    <TR><TD PORT=\"TO_d\">D<\/TD><TD><\/TD><TD PORT=\"FROM_d\" BGCOLOR=\"black\"><\/TD><\/TR>\n    <TR><TD PORT=\"TO_e\">E<\/TD><TD><\/TD><TD PORT=\"FROM_e\"><\/TD><\/TR>\n    <\/TABLE>>];\n\n  \"A_C\":FROM_a -> \"A\":TO_a;\n  \"A_C\":FROM_b -> \"A\":TO_b;\n}\n","config":{"engine":"dot","options":null}},"evals":[],"jsHooks":[]}</script>
+<div id="htmlwidget-b8969e205e7edef4e1f4" style="width:100%;height:480px;" class="grViz html-widget"></div>
+<script type="application/json" data-for="htmlwidget-b8969e205e7edef4e1f4">{"x":{"diagram":"digraph {\n  rankdir = \"LR\"\n  node [shape=plaintext];\n\n  \"A\" [label = <\n    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n    <TR><TD COLSPAN=\"3\">A<\/TD><\/TR>\n    <TR><TD PORT=\"TO_a\">A<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_a\"><\/TD><\/TR>\n    <TR><TD PORT=\"TO_b\">B<\/TD><TD><\/TD><TD PORT=\"FROM_b\" BGCOLOR=\"black\"><\/TD><\/TR>\n    <\/TABLE>>];\n  \"A_C\" [label = <\n    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n    <TR><TD COLSPAN=\"3\">A_C<\/TD><\/TR>\n    <TR><TD PORT=\"TO_a\">A<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_a\"><\/TD><\/TR>\n    <TR><TD PORT=\"TO_c\">C<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_c\"><\/TD><\/TR>\n    <TR><TD PORT=\"TO_b\">B<\/TD><TD><\/TD><TD PORT=\"FROM_b\" BGCOLOR=\"black\"><\/TD><\/TR>\n    <TR><TD PORT=\"TO_d\">D<\/TD><TD><\/TD><TD PORT=\"FROM_d\" BGCOLOR=\"black\"><\/TD><\/TR>\n    <TR><TD PORT=\"TO_e\">E<\/TD><TD><\/TD><TD PORT=\"FROM_e\"><\/TD><\/TR>\n    <\/TABLE>>];\n\n  \"A_C\":FROM_a -> \"A\":TO_a;\n  \"A_C\":FROM_b -> \"A\":TO_b;\n}\n","config":{"engine":"dot","options":null}},"evals":[],"jsHooks":[]}</script>
 <p>Attributes <code>A</code> and <code>B</code> are equivalent, since
 relation <code>A</code> has them both as a key. In other words, relation
 <code>A</code> is a simple lookup relation. Because of this, we could
@@ -2318,8 +2320,8 @@ using the <code>remove_avoidable</code> flag for
   remove_avoidable = TRUE
 ) |&gt;
   show()</code></pre>
-<div id="htmlwidget-a4eef7ba521354d7953b" style="width:100%;height:480px;" class="grViz html-widget"></div>
-<script type="application/json" data-for="htmlwidget-a4eef7ba521354d7953b">{"x":{"diagram":"digraph {\n  rankdir = \"LR\"\n  node [shape=plaintext];\n\n  \"A\" [label = <\n    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n    <TR><TD COLSPAN=\"3\">A<\/TD><\/TR>\n    <TR><TD PORT=\"TO_a\">A<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_a\"><\/TD><\/TR>\n    <TR><TD PORT=\"TO_b\">B<\/TD><TD><\/TD><TD PORT=\"FROM_b\" BGCOLOR=\"black\"><\/TD><\/TR>\n    <\/TABLE>>];\n  \"A_C\" [label = <\n    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n    <TR><TD COLSPAN=\"3\">A_C<\/TD><\/TR>\n    <TR><TD PORT=\"TO_a\">A<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_a\" BGCOLOR=\"black\"><\/TD><\/TR>\n    <TR><TD PORT=\"TO_c\">C<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_c\"><\/TD><\/TR>\n    <TR><TD PORT=\"TO_d\">D<\/TD><TD><\/TD><TD PORT=\"FROM_d\" BGCOLOR=\"black\"><\/TD><\/TR>\n    <TR><TD PORT=\"TO_e\">E<\/TD><TD><\/TD><TD PORT=\"FROM_e\"><\/TD><\/TR>\n    <\/TABLE>>];\n\n  \"A_C\":FROM_a -> \"A\":TO_a;\n}\n","config":{"engine":"dot","options":null}},"evals":[],"jsHooks":[]}</script>
+<div id="htmlwidget-fc6a96c52a7387a69e24" style="width:100%;height:480px;" class="grViz html-widget"></div>
+<script type="application/json" data-for="htmlwidget-fc6a96c52a7387a69e24">{"x":{"diagram":"digraph {\n  rankdir = \"LR\"\n  node [shape=plaintext];\n\n  \"A\" [label = <\n    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n    <TR><TD COLSPAN=\"3\">A<\/TD><\/TR>\n    <TR><TD PORT=\"TO_a\">A<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_a\"><\/TD><\/TR>\n    <TR><TD PORT=\"TO_b\">B<\/TD><TD><\/TD><TD PORT=\"FROM_b\" BGCOLOR=\"black\"><\/TD><\/TR>\n    <\/TABLE>>];\n  \"A_C\" [label = <\n    <TABLE BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"4\">\n    <TR><TD COLSPAN=\"3\">A_C<\/TD><\/TR>\n    <TR><TD PORT=\"TO_a\">A<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_a\" BGCOLOR=\"black\"><\/TD><\/TR>\n    <TR><TD PORT=\"TO_c\">C<\/TD><TD BGCOLOR=\"black\"><\/TD><TD PORT=\"FROM_c\"><\/TD><\/TR>\n    <TR><TD PORT=\"TO_d\">D<\/TD><TD><\/TD><TD PORT=\"FROM_d\" BGCOLOR=\"black\"><\/TD><\/TR>\n    <TR><TD PORT=\"TO_e\">E<\/TD><TD><\/TD><TD PORT=\"FROM_e\"><\/TD><\/TR>\n    <\/TABLE>>];\n\n  \"A_C\":FROM_a -> \"A\":TO_a;\n}\n","config":{"engine":"dot","options":null}},"evals":[],"jsHooks":[]}</script>
 <p>This schema is now in LTK form, with no remaining avoidable
 attributes. We could have also removed <code>A</code> from relation
 <code>A_C</code> instead of <code>B</code>, so this process may not have

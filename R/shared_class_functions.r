@@ -474,3 +474,48 @@ check_reassignment_same_class <- function(value, x) {
   if (!identical(class(value), class(x)))
     stop("value must also be a ", class(x)[[1]], " object")
 }
+
+#' Add attribute lookup relations
+#'
+#' Create single-attribute relations for each of a given set of attributes. If
+#' the original object also contains references, then the new lookup relations
+#' are connected to other appearances of their attribute by chains of
+#' references.
+#'
+#' Whether an attribute in \code{as} gets a new key relation depends on the
+#' relations already present. An existing relation is considered to be a lookup
+#' if the following hold:
+#' \itemize{
+#'   \item The attribute is a simple key for the relation;
+#'   \item If \code{x} is a relation data object, then the relation contains all
+#'     given values for that attribute.
+#' }
+#'
+#' If the original object includes references, then references are added to
+#' connected each attribute's appearances to its lookup. If several relations
+#' could be a lookup for the attribute, then \code{add_lookup} fails due to the
+#' desired result being ambiguous.
+#'
+#' @param x a relational schema object, such as a \code{\link{relation_schema}}
+#'   or \code{\link{database_schema}} object, or a relational data object, such
+#'   as a \code{\link{relation}} or \code{\link{database}} object.
+#' @param as a character vector of elements from \code{\link{attrs_order}(x)},
+#'   indicating which attributes to create lookup tables for.
+#' @param ... further arguments pass on to methods.
+#'
+#' @return an object of the same class as \code{x}.
+#' @export
+#' @examples
+#' db <- autodb(ChickWeight)
+#' db
+#' add_lookup(db, "Time")
+#' add_lookup(db, "Chick") # Chick is already a key, so this does nothing
+#' # data objects round numeric and complex values before checking given values
+#' add_lookup(db, "weight", digits = 3)
+#' \dontrun{add_lookup(c(db, db), "Chick") # fails: two lookup candidates}
+#' # two lookups without references is fine
+#' rels <- subrelations(db)
+#' add_lookup(c(rels, rels), "Chick")
+add_lookup <- function(x, as, ...) {
+  UseMethod("add_lookup")
+}

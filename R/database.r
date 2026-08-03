@@ -443,7 +443,7 @@ c.database <- function(...) {
   joined_references <- do.call(c, new_references)
 
   result_lst <- list(joined_rels, joined_references)
-  do.call(database, result_lst)
+  do.call(database_nocheck, result_lst)
 }
 
 #' @exportS3Method
@@ -465,8 +465,17 @@ insert.database <- function(
     digits = digits,
     ...
   )
+  insertable <- vapply(
+    attrs(x)[relations],
+    \(as) all(is.element(as, names(vals))),
+    logical(1)
+  )
   dfs <- records(new_subrelations)
-  reference_checks <- reference_errors(dfs, references(x))
+  affected_refs <- Filter(
+    \(ref) ref[[1]] %in% names(insertable)[insertable],
+    references(x)
+  )
+  reference_checks <- reference_errors(dfs, affected_refs)
   if (length(reference_checks)) {
     error_strings <- vapply(
       reference_checks,
@@ -534,4 +543,94 @@ print.database <- function(x, max = 10, ...) {
   cat("database with ")
   print(subrelations(x), max = max, ...)
   print_references(references(x), max)
+}
+
+#' @exportS3Method
+add_lookup.database <- function(x, as, digits = getOption("digits"), ...) {
+  new_rel <- add_lookup(subrelations(x), as, digits = digits, ...)
+  added_relnames <- setdiff(names(new_rel), names(x))
+  nonadded_lookup_attrs <- setdiff(
+    as,
+    vapply(keys(new_rel[added_relnames]), `[[`, character(1), 1)
+  )
+  nonadded_keysets <- lapply(keys(x), intersect, nonadded_lookup_attrs) |>
+    lapply(Reduce, f = c, init = character())
+  nonadded_keyrels <- lapply(
+    nonadded_lookup_attrs,
+    \(a) names(nonadded_keysets[vapply(nonadded_keysets, is.element, logical(1), el = a)])
+  )
+
+  nonadded_value_sets <- value_sets(x, nonadded_lookup_attrs)
+  empty_nonadded_value_set <- lengths(nonadded_value_sets) == 0
+  nonadded_values <- lapply(
+    nonadded_value_sets,
+    \(x) Reduce(c, x) |>
+      coarsen_if_float(digits = digits) |>
+      unique()
+  )
+  nonadded_values[empty_nonadded_value_set] <- rep(
+    list(logical()),
+    sum(empty_nonadded_value_set)
+  )
+  nonadded_key_value_sets <- Map(
+    \(vs, rels) vs[rels],
+    nonadded_value_sets,
+    nonadded_keyrels
+  )
+  nonadded_lookup_candidates <- Map(
+    \(vs, vals) names(vs)[vapply(vs, setequal, logical(1), vals)],
+    nonadded_key_value_sets,
+    nonadded_values
+  )
+
+  # add FKs for existing relations deemed as lookups
+  nonadded_ncand <- lengths(nonadded_lookup_candidates)
+  stopifnot(all(nonadded_ncand > 0)) # if zero, .relation added lookup
+  if (any(nonadded_ncand > 1))
+    stop(paste(
+      by_number(sum(nonadded_ncand > 1), "attribute", "", "s"),
+      toString(nonadded_lookup_attrs[nonadded_ncand > 1]),
+      by_number(sum(nonadded_ncand > 1), "ha", "s", "ve"),
+      "multiple lookup candidates"
+    ))
+  lookups <- as.character(nonadded_lookup_candidates)
+  existing_lookup_refs <- lapply(
+    setdiff(names(x), lookups),
+    \(nm) {
+      in_rel <- is.element(nonadded_lookup_attrs, attrs(x)[[nm]])
+      rel_as <- nonadded_lookup_attrs[in_rel]
+      ref_attrs <- references(x) |>
+        Filter(f = \(ref) ref[[1]] == nm) |>
+        lapply(\(ref) ref[[2]]) |>
+        Reduce(f = c, init = character())
+      orphans <- setdiff(rel_as, ref_attrs)
+      Map(\(a, p) list(nm, a, p, a), orphans, lookups[match(orphans, rel_as)])
+    }
+  )
+
+  # add FKs for added lookups
+  used_nms <- setdiff(names(new_rel), names(x))
+  used_as <- vapply(keys(new_rel[used_nms]), `[[`, character(1), 1)
+  new_lookup_refs <- lapply(
+    names(x),
+    \(nm) {
+      in_rel <- is.element(used_as, attrs(x)[[nm]])
+      rel_as <- used_as[in_rel]
+      lookups <- used_nms[in_rel]
+      ref_attrs <- references(x) |>
+        Filter(f = \(ref) ref[[1]] == nm) |>
+        lapply(\(ref) ref[[2]]) |>
+        Reduce(f = c, init = character())
+      orphans <- setdiff(rel_as, ref_attrs)
+      Map(\(a, p) list(nm, a, p, a), orphans, lookups[match(orphans, rel_as)])
+    }
+  )
+
+  new_refs <- Reduce(
+    c,
+    c(existing_lookup_refs, new_lookup_refs),
+    init = references(x)
+  ) |>
+    unname()
+  database(new_rel, new_refs)
 }

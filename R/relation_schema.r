@@ -462,3 +462,41 @@ as.data.frame.relation_schema <- function(
     names(res) <- nm
   res
 }
+
+#' @exportS3Method
+add_lookup.relation_schema <- function(x, as, ...) {
+  as <- unique(as)
+  n_absent <- length(setdiff(as, attrs_order(x)))
+  if (n_absent > 0)
+    stop(paste(
+      by_number(n_absent, "attribute", "", "s"),
+      toString(as),
+      by_number(n_absent, "do", "es", ""),
+      "not exist in x")
+    )
+  ks <- Reduce(c, keys(x), init = list())
+  key_present <- vapply(
+    as,
+    \(a) any(vapply(ks, identical, logical(1), a)),
+    logical(1)
+  )
+  if (all(key_present))
+    return(x)
+  nonkey_attrs <- as[!key_present]
+  c(
+    x,
+    relation_schema(
+      lapply(
+        stats::setNames(nm = nonkey_attrs),
+        \(a) list(a, list(a))
+      ),
+      attrs_order(x)
+    )
+  )
+}
+
+#' @exportS3Method
+rep.relation_schema <- function(x, ...) {
+  vals <- rep(seq_along(x), ...)
+  x[vals]
+}

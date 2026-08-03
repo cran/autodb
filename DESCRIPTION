@@ -1,6 +1,6 @@
 Package: autodb
 Title: Automatic Database Normalisation for Data Frames
-Version: 3.2.4
+Version: 3.3.0
 Authors@R: 
     person(
       "Mark",
@@ -25,7 +25,7 @@ RoxygenNote: 7.3.3
 Depends: R (>= 4.1.0)
 Suggests: rlang, spelling, DiagrammeR (>= 1.0.7), testthat (>= 3.3.0),
         R.utils (>= 2.11.0), hedgehog (>= 0.1), tibble (>= 3.2.1),
-        knitr, rmarkdown
+        jsonlite(>= 2.0.0), knitr, rmarkdown
 Config/testthat/edition: 3
 VignetteBuilder: knitr
 LazyData: true
@@ -33,9 +33,9 @@ URL: https://charnelmouse.github.io/autodb/,
         https://github.com/CharnelMouse/autodb
 BugReports: https://github.com/CharnelMouse/autodb/issues
 NeedsCompilation: no
-Packaged: 2025-11-17 21:06:50 UTC; Mark
+Packaged: 2026-08-03 20:10:38 UTC; Mark
 Author: Mark Webster [aut, cre] (ORCID:
     <https://orcid.org/0000-0002-3351-0686>)
 Maintainer: Mark Webster <markwebster204@yahoo.co.uk>
 Repository: CRAN
-Date/Publication: 2025-11-17 21:40:02 UTC
+Date/Publication: 2026-08-03 22:20:02 UTC

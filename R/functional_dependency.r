@@ -72,6 +72,7 @@
 #' # (in)equality ignores header
 #' stopifnot(all(fds3 == fds))
 #' stopifnot(!any(fds != fds))
+#' stopifnot(all(fds <= fds))
 #' @export
 functional_dependency <- function(
   FDs,
@@ -235,32 +236,28 @@ as.character.functional_dependency <- function(
   ...
 ) {
   align_arrows <- match.arg(align_arrows)
-  det_txt <- vapply(detset(x), toString, character(1))
+  det_txt <- paste0("{", vapply(detset(x), toString, character(1)), "}")
   dep_txt <- dependant(x)
   switch(
     align_arrows,
     no = lpadding <- rpadding <- rep("", length(x)),
-    left = if (length(x) == 0) {
-      lpadding <- rpadding <- rep("", length(x))
-    }else{
-      det_nchar <- nchar(det_txt)
-      lpadding <- vapply(
-        max(det_nchar) - det_nchar,
-        \(n) paste(rep(" ", n), collapse = ""),
-        character(1)
-      )
+    left = {
       rpadding <- rep("", length(x))
+      lpadding <- if (length(x) == 0)
+        rep("", length(x))
+      else{
+        det_nchar <- nchar(det_txt)
+        strrep(" ", max(det_nchar) - det_nchar)
+      }
     },
-    right = if (length(x) == 0) {
-      lpadding <- rpadding <- rep("", length(x))
-    }else{
-      dep_nchar <- nchar(dep_txt)
-      rpadding <- vapply(
-        max(dep_nchar) - dep_nchar,
-        \(n) paste(rep(" ", n), collapse = ""),
-        character(1)
-      )
+    right = {
       lpadding <- rep("", length(x))
+      rpadding <- if (length(x) == 0)
+        rep("", length(x))
+      else{
+        dep_nchar <- nchar(dep_txt)
+        strrep(" ", max(dep_nchar) - dep_nchar)
+      }
     }
   )
   paste0(lpadding, det_txt, " -> ", dep_txt, rpadding, recycle0 = TRUE)
@@ -302,7 +299,16 @@ as.data.frame.functional_dependency <- function(
 
 #' @exportS3Method
 Ops.functional_dependency <- function(e1, e2) {
-  ok <- switch(.Generic, `==` = , `!=` = TRUE, FALSE)
+  ok <- switch(
+    .Generic,
+    `==` = ,
+    `!=` = ,
+    `<` = ,
+    `<=` = ,
+    `>` = ,
+    `>=` = TRUE,
+    FALSE
+  )
   if (!ok) {
     stop(gettextf(
       "%s not meaningful for functional_dependency objects",
@@ -311,9 +317,24 @@ Ops.functional_dependency <- function(e1, e2) {
   }
   switch(
     .Generic,
-    `==` = mapply(setequal, detset(e1), detset(e2)) &
+    `==` = as.logical(mapply(setequal, detset(e1), detset(e2))) &
       dependant(e1) == dependant(e2),
-    `!=` = !mapply(setequal, detset(e1), detset(e2)) |
-      dependant(e1) != dependant(e2)
+    `!=` = !as.logical(mapply(setequal, detset(e1), detset(e2))) |
+      dependant(e1) != dependant(e2),
+    `<` = as.logical(mapply(
+      \(x, y) !setequal(x, y) & all(is.element(x, y)),
+      detset(e1),
+      detset(e2)
+    )) &
+      dependant(e1) == dependant(e2),
+    `<=` = as.logical(mapply(\(x, y) all(is.element(x, y)), detset(e1), detset(e2))) &
+      dependant(e1) == dependant(e2),
+    `>` = e2 < e1,
+    `>=` = e2 <= e1
   )
+}
+
+#' @exportS3Method
+rep.functional_dependency <- function(x, ...) {
+  functional_dependency(rep(unclass(x), ...), attrs_order(x), unique = FALSE)
 }

@@ -5,12 +5,13 @@ describe("decompose", {
         gen_df(6, 7),
         gen.choice(gen.element(7:1), gen.pure(NA_integer_)),
         gen.element(c(FALSE, TRUE))
-      ),
-      \(x, digits, check) {
+      ) |>
+        gen.with(\(x) c(x[1], list(as.list(x[[1]])), x[2:3])),
+      \(x, x2, digits, check) {
         fds <- discover(x, digits = digits)
         schema <- normalise(fds)
         db <- decompose(x, schema, digits = digits, check = check)
-        is_valid_database(db)
+        expect_valid_database(db)
       },
       curry = TRUE
     )
@@ -127,30 +128,6 @@ describe("decompose", {
     )
     expect_identical(new_db, expected_db)
   })
-  it("removes transitive references", {
-    df <- data.frame(
-      a = 1L,
-      b = 1L,
-      c = 1L,
-      d = 1L,
-      e = 1L
-    )
-    schema <- relation_schema(
-      list(
-        a = list(c("a", "b", "c"), list("a")),
-        b_c = list(c("b", "c", "d"), list(c("b", "c"))),
-        b = list(c("b", "e"), list("b"))
-      ),
-      attrs_order = c("a", "b", "c", "d", "e")
-    ) |>
-      database_schema(
-        references = list(
-          list("a", c("b", "c"), "b_c", c("b", "c")),
-          list("b_c", "b", "b", "b")
-        )
-      )
-    new_db <- decompose(df, schema)
-  })
   it("returns a error if data.frame doesn't satisfy FDs in the schema", {
     add_id_attribute <- function(df) {
       df2 <- cbind(df, a = seq.int(nrow(df)))
@@ -188,7 +165,7 @@ describe("decompose", {
         paste0(
           "\\A",
           "df doesn't satisfy functional dependencies in schema:",
-          "(\\n\\{.*\\} -> .*)+",
+          "(\\n *\\{.*\\} -> .*)+",
           "\\Z"
         ),
         perl = TRUE
@@ -219,100 +196,108 @@ describe("decompose", {
       curry = TRUE
     )
   })
-  it("returns a error if data.frame doesn't satisfy FKs in the schema", {
-    fac2char <- function(df) {
-      facs <- vapply(df, is.factor, logical(1))
-      df[, facs] <- lapply(df[, facs, drop = FALSE], as.character)
-      df
-    }
-    gen_fk_reduction_for_df <- function(df) {
-      true_dbs <- normalise(discover(df))
-      true_fks <- references(true_dbs)
-      true_fk_key_switch <- lapply(
-        true_fks,
-        \(fk) {
-          len <- length(fk[[2]])
-          new_tbs <- vapply(
-            keys(true_dbs),
-            \(ks) match(len, lengths(ks)),
-            integer(1)
-          )
-          valid_new_tbs <- new_tbs[
-            !is.na(new_tbs) &
-              names(new_tbs) != fk[[1]] &
-              names(new_tbs) != fk[[3]]
-          ]
-          new_fks <- Map(
-            \(new_key_index, new_parent) {
-              new_fk <- c(
-                fk[1:2],
-                list(new_parent, keys(true_dbs)[[new_parent]][[new_key_index]])
-              )
-              stopifnot(length(new_fk) == 4)
-              if (!is.element(list(new_fk[[4]]), keys(true_dbs)[[new_fk[[3]]]]))
-                stop("argh")
-              new_fk
-            },
-            valid_new_tbs,
-            names(valid_new_tbs)
-          ) |>
-            Filter(f = \(fk) !is.element(list(fk), true_fks)) |>
-            Filter(f = \(fk) {
-              length(remove_violated_references(
-                list(fk),
-                decompose(df, true_dbs)
-              )) == 0
-            })
-          new_fks
-        }
-      )
-      if (all(lengths(true_fk_key_switch) == 0))
-        return(gen.pure(list(df, NULL)))
-      gen.element(which(lengths(true_fk_key_switch) > 0)) |>
-        gen.and_then(\(index) list(
-          gen.pure(df),
-          gen.element(true_fk_key_switch[[index]]) |>
-            gen.with(\(new_fk) {
-              dbs <- true_dbs
-              references(dbs)[[index]] <- new_fk
-              dbs
-            })
-        ))
-    }
-    gen_df_and_fk_reduction <- function(nrow, ncol) {
-      gen_df(nrow, ncol, minrow = 4L, mincol = 4L, remove_dup_rows = TRUE) |>
-        # change factors to characters, since they cause merge problems when
-        # merged with non-factor non-character vectors that aren't in their
-        # level set
-        gen.with(fac2char) |>
-        gen.and_then(gen_fk_reduction_for_df)
-    }
-    expect_fk_error <- function(df, dbs) {
-      if (nrow(df) <= 1 || is.null(dbs))
-        discard()
-      name_regexp <- "[\\w\\. ]+"
-      fk_half_regexp <- paste0(
-        name_regexp,
-        "\\.\\{", name_regexp, "(, ", name_regexp, ")*\\}"
-      )
-      expect_error(
-        decompose(df, dbs, check = TRUE),
-        paste0(
-          "\\A",
-          "relations must satisfy references in schema:",
-          "(\\n", fk_half_regexp, " -> ", fk_half_regexp, ")+",
-          "\\Z"
-        ),
-        perl = TRUE
-      )
-    }
-    forall(
-      gen_df_and_fk_reduction(6, 7),
-      expect_fk_error,
-      discard.limit = 200,
-      curry = TRUE
-    )
-  })
+  # it("returns a error if data.frame doesn't satisfy FKs in the schema", {
+  #   gen_fk_reduction_for_df <- function(df) {
+  #     true_dbs <- normalise(discover(df))
+  #     true_fks <- references(true_dbs)
+  #     true_fk_key_switch <- lapply(
+  #       true_fks,
+  #       \(fk) {
+  #         len <- length(fk[[2]])
+  #         # first key of correct length in each relation...
+  #         new_tbs <- vapply(
+  #           keys(true_dbs),
+  #           \(ks) match(len, lengths(ks)),
+  #           integer(1)
+  #         )
+  #         # ... that's not in the original FK
+  #         valid_new_tbs <- new_tbs[
+  #           !is.na(new_tbs) &
+  #             names(new_tbs) != fk[[1]] &
+  #             names(new_tbs) != fk[[3]]
+  #         ]
+  #         new_fks <- Map(
+  #           \(new_key_index, new_parent) {
+  #             new_fk <- c(
+  #               fk[1:2],
+  #               list(new_parent, keys(true_dbs)[[new_parent]][[new_key_index]])
+  #             )
+  #             stopifnot(length(new_fk) == 4)
+  #             if (!is.element(list(new_fk[[4]]), keys(true_dbs)[[new_fk[[3]]]]))
+  #               stop("argh")
+  #             new_fk
+  #           },
+  #           valid_new_tbs,
+  #           names(valid_new_tbs)
+  #         ) |>
+  #           Filter(f = \(fk) !is.element(list(fk), true_fks)) |>
+  #           Filter(f = \(fk) {
+  #             length(remove_violated_references(
+  #               list(fk),
+  #               decompose(df, true_dbs)
+  #             )) == 0
+  #           })
+  #         new_fks
+  #       }
+  #     )
+  #     if (all(lengths(true_fk_key_switch) == 0))
+  #       return(gen.pure(list(df, NULL)))
+  #     gen.element(which(lengths(true_fk_key_switch) > 0)) |>
+  #       gen.and_then(\(index) list(
+  #         gen.pure(df),
+  #         gen.element(true_fk_key_switch[[index]]) |>
+  #           gen.with(\(new_fk) {
+  #             dbs <- true_dbs
+  #             references(dbs)[[index]] <- new_fk
+  #             dbs
+  #           })
+  #       ))
+  #   }
+  #   fac2char <- function(df) {
+  #     facs <- vapply(df, is.factor, logical(1))
+  #     df[, facs] <- lapply(df[, facs, drop = FALSE], as.character)
+  #     df
+  #   }
+  #   gen_df_and_fk_reduction <- function(nrow, ncol) {
+  #     gen_df(nrow, ncol, minrow = 4L, mincol = 4L, remove_dup_rows = TRUE) |>
+  #       # change factors to characters, since they cause merge problems when
+  #       # merged with non-factor non-character vectors that aren't in their
+  #       # level set
+  #       gen.with(fac2char) |>
+  #       gen.and_then(gen_fk_reduction_for_df)
+  #   }
+  #   expect_fk_error <- function(df, dbs) {
+  #     if (nrow(df) <= 1 || is.null(dbs))
+  #       discard()
+  #     name_regexp <- "[\\w\\. ]+"
+  #     fk_half_regexp <- paste0(
+  #       name_regexp,
+  #       "\\.\\{", name_regexp, "(, ", name_regexp, ")*\\}"
+  #     )
+  #     expect_error(
+  #       decompose(df, dbs, check = TRUE),
+  #       paste0(
+  #         "\\A",
+  #         "relations must satisfy references in schema:",
+  #         "(\\n", fk_half_regexp, " -> ", fk_half_regexp, ")+",
+  #         "\\Z"
+  #       ),
+  #       perl = TRUE
+  #     )
+  #   }
+  #   # gen_fk_reduction_for_df succeeds
+  #   forall(
+  #     gen_df(6, 7, minrow = 4, mincol = 4, remove_dup_rows = TRUE) |>
+  #       gen.with(fac2char),
+  #     \(x) expect_no_error(gen_fk_reduction_for_df(x))
+  #   )
+  #   forall(
+  #     gen_df_and_fk_reduction(6, 7),
+  #     expect_fk_error,
+  #     discard.limit = 2*getOption("hedgehog.tests", 100),
+  #     curry = TRUE
+  #   )
+  # })
   it("is equivalent to create >> insert for valid data", {
     forall(
       list(

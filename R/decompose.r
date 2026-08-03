@@ -69,28 +69,23 @@ decompose <- function(
     )
     if (!all(fds_satisfied)) {
       stop(paste(
-        "df doesn't satisfy functional dependencies in schema:",
-        paste(
-          vapply(
-            inferred_fds[!fds_satisfied],
-            \(fd) paste0("{", toString(fd[[1]]), "} -> ", fd[[2]]),
-            character(1)
-          ),
-          collapse = "\n"
+        c(
+          "df doesn't satisfy functional dependencies in schema:",
+          as.character(
+            functional_dependency(inferred_fds[!fds_satisfied], attrs_order(schema)),
+            align_arrows = "left"
+          )
         ),
-        sep = "\n"
+        collapse = "\n"
       ))
     }
-
-    create_insert(df, schema, digits = digits) |>
-      database(references(schema))
-  }else {
-    create_insert(df, schema, digits = digits) |>
-      database(references(schema), check = FALSE)
   }
+
+  create_insert(df, schema, digits = digits) |>
+    database(references(schema), check = check)
 }
 
-create_insert <- function(df, schema, digits = getOption("digits")) {
+create_insert <- function(df, schema, digits = getOption("digits"), check = TRUE) {
   if (!is.na(digits))
     df <- df_coarsen(df, digits)
   relations <- stats::setNames(
@@ -106,7 +101,10 @@ create_insert <- function(df, schema, digits = getOption("digits")) {
     ),
     names(schema)
   )
-  relation(relations, attrs_order(schema))
+  if (check)
+    relation(relations, attrs_order(schema))
+  else
+    relation_nocheck(relations, attrs_order(schema))
 }
 
 drop_primary_dups <- function(df, prim_key) {

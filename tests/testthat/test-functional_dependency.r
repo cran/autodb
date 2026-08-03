@@ -78,7 +78,7 @@ describe("functional_dependency", {
     )
     expect_output(
       print(functional_dependency(list(list("a", "b")), c("a", "b"))),
-      "\\A1 functional dependency\\n2 attributes: a, b\\na -> b\\Z",
+      "\\A1 functional dependency\\n2 attributes: a, b\\n{a} -> b\\Z",
       perl = TRUE
     )
   })
@@ -90,15 +90,15 @@ describe("functional_dependency", {
           gen.sample_resampleable(c(FALSE, TRUE), of = length(fd))
         )),
       \(fd, i) {
-        is_valid_functional_dependency(fd[i])
+        expect_valid_functional_dependency(fd[i])
 
         inum <- which(i)
-        is_valid_functional_dependency(fd[inum])
+        expect_valid_functional_dependency(fd[inum])
         expect_identical(fd[i], fd[inum])
 
         ineg <- -setdiff(seq_along(fd), inum)
         if (!all(i)) {
-          is_valid_functional_dependency(fd[ineg])
+          expect_valid_functional_dependency(fd[ineg])
           expect_identical(fd[i], fd[ineg])
         }
 
@@ -117,12 +117,12 @@ describe("functional_dependency", {
           gen.element(seq_along(fd))
         )),
       \(fd, inum) {
-        is_valid_functional_dependency(fd[[inum]])
+        expect_valid_functional_dependency(fd[[inum]])
         expect_identical(fd[inum], fd[[inum]])
 
         ineg <- -setdiff(seq_along(fd), inum)
         if (length(ineg) == 1) {
-          is_valid_functional_dependency(fd[[ineg]])
+          expect_valid_functional_dependency(fd[[ineg]])
           expect_identical(fd[inum], fd[[ineg]])
         }
 
@@ -313,6 +313,16 @@ describe("functional_dependency", {
     expect_identical(tb$fd, fds)
   })
 
+  it("can be repeated", {
+    fds <- functional_dependency(
+      list(list(c("a", "b"), "c"), list("a", "d")),
+      letters[1:4]
+    )
+    expect_identical(rep(fds, 2), c(fds, fds, unique = FALSE))
+    expect_identical(rep(fds, c(2, 1)), fds[c(1, 1, 2)])
+    expect_identical(rep(fds, each = 2), fds[c(1, 1, 2, 2)])
+  })
+
   it("can have its attributes renamed", {
     forall(
       gen.fd(letters[1:6], 0, 8),
@@ -343,6 +353,13 @@ describe("functional_dependency", {
     expect_true(all(fds != rev(fds)))
     expect_false(any(fds != fds))
   })
+  it("can be compared in outer (requires rep)", {
+    fds <- functional_dependency(
+      list(list(c("a", "b"), "c"), list("a", "d")),
+      letters[1:4]
+    )
+    expect_identical(outer(fds, fds, "=="), diag(2) == 1)
+  })
   it("ignores attrs_order/header when comparing for equality", {
     fds <- functional_dependency(
       list(list(c("a", "b"), "c"), list("a", "d")),
@@ -362,5 +379,55 @@ describe("functional_dependency", {
     )
     expect_identical(fds == fds[1], c(TRUE, FALSE))
     expect_true(all(c(fds, fds, unique = FALSE) == fds))
+  })
+
+  it("can be compared for inequality (i.e. implication)", {
+    fds <- functional_dependency(
+      list(
+        list(c("a", "b"), "c"),
+        list(c("a", "b", "d"), "c"),
+        list("a", "d")
+      ),
+      letters[1:4]
+    )
+    fds2 <- fds
+    attrs_order(fds2) <- letters[4:1]
+
+    expect_identical(
+      outer(fds, fds2, "<"),
+      matrix(
+        c(FALSE, FALSE, FALSE, TRUE, FALSE, FALSE, FALSE, FALSE, FALSE),
+        nrow = 3
+      )
+    )
+    expect_identical(
+      outer(fds, fds2, "<="),
+      matrix(
+        c(TRUE, FALSE, FALSE, TRUE, TRUE, FALSE, FALSE, FALSE, TRUE),
+        nrow = 3
+      )
+    )
+    expect_identical(
+      outer(fds, fds2, ">"),
+      matrix(
+        c(FALSE, TRUE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE),
+        nrow = 3
+      )
+    )
+    expect_identical(
+      outer(fds, fds2, ">="),
+      matrix(
+        c(TRUE, TRUE, FALSE, FALSE, TRUE, FALSE, FALSE, FALSE, TRUE),
+        nrow = 3
+      )
+    )
+
+    # tests for zero-length inputs
+    expect_true(all(functional_dependency(list(), character()) == functional_dependency(list(), "a")))
+    expect_true(all(functional_dependency(list(), character()) != functional_dependency(list(), "a")))
+    expect_true(all(functional_dependency(list(), character()) < functional_dependency(list(), "a")))
+    expect_true(all(functional_dependency(list(), character()) <= functional_dependency(list(), "a")))
+    expect_true(all(functional_dependency(list(), character()) > functional_dependency(list(), "a")))
+    expect_true(all(functional_dependency(list(), character()) >= functional_dependency(list(), "a")))
   })
 })

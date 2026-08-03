@@ -477,7 +477,7 @@ c.relation <- function(...) {
   attrs_order_list <- lapply(lst, attrs_order)
   joined_attrs_order <- do.call(merge_attribute_orderings, attrs_order_list)
 
-  relation(joined_rels, joined_attrs_order)
+  relation_nocheck(joined_rels, joined_attrs_order)
 }
 
 #' @exportS3Method
@@ -532,14 +532,14 @@ insert.relation <- function(
     \(df) {
       if (!all(is.element(names(df), names(vals))))
         return(df)
-      df <- if (nrow(df) == 0L)
-        df_unique(vals[, names(df), drop = FALSE])
-      else
-        df_unique(df_rbind(
-          df,
-          vals[, names(df), drop = FALSE]
-        ))
-      df
+      if (nrow(df) == 0L)
+        return(df_unique(vals[, names(df), drop = FALSE]))
+      if (nrow(vals) == 0L)
+        return(`class<-`(df, class(vals)))
+      df_unique(df_rbind(
+        df,
+        vals[, names(df), drop = FALSE]
+      ))
     }
   )
   keydups <- mapply(
@@ -707,4 +707,69 @@ as.data.frame.relation <- function(
   if (!optional)
     names(res) <- nm
   res
+}
+
+#' @exportS3Method
+add_lookup.relation <- function(x, as, digits = getOption("digits"), ...) {
+  as <- unique(as)
+  n_absent <- length(setdiff(as, attrs_order(x)))
+  if (n_absent > 0)
+    stop(paste(
+      by_number(n_absent, "attribute", "", "s"),
+      toString(as),
+      by_number(n_absent, "do", "es", ""),
+      "not exist in x")
+    )
+
+  value_sets <- value_sets(x, as)
+  no_vals <- lengths(value_sets) == 0
+  values <- lapply(
+    value_sets,
+    \(x) Reduce(c, x) |>
+      coarsen_if_float(digits) |>
+      unique()
+  )
+  values[no_vals] <- rep(list(logical()), sum(no_vals))
+
+  is_key <- lapply(as, \(a) vapply(keys(x), \(ks) any(vapply(ks, identical, logical(1), a)), logical(1)))
+  key_present <- mapply(\(vs, v, ik) any(lengths(vs[names(ik)[ik]]) == length(v)), value_sets, values, is_key)
+  if (all(key_present))
+    return(x)
+  nonkey_attrs <- as[!key_present]
+  res <- c(
+    x,
+    relation(
+      lapply(
+        stats::setNames(nm = nonkey_attrs),
+        \(a) list(df = stats::setNames(data.frame(logical()), a), keys = list(a))
+      ),
+      attrs_order(x)
+    )
+  )
+  new_nms <- names(res)[setdiff(seq_along(res), seq_along(x))]
+  stopifnot(length(new_nms) == sum(!key_present))
+  for (nk in which(!key_present)) {
+    res <- insert(
+      res,
+      stats::setNames(data.frame(values[[nk]]), as[[nk]]),
+      relations = new_nms[[match(nk, which(!key_present))]],
+      digits = digits
+    )
+  }
+  res
+}
+
+value_sets <- function(x, as) {
+  present <- outer(attrs(x), as, Map, f = \(x, y) is.element(y, x))
+  value_sets <- lapply(
+    stats::setNames(seq_along(as), as),
+    \(n) lapply(records(x)[as.logical(unlist(present[, n]))], \(dat) unique(dat[[as[[n]]]]))
+  )
+  value_sets
+}
+
+#' @exportS3Method
+rep.relation <- function(x, ...) {
+  vals <- rep(seq_along(x), ...)
+  x[vals]
 }

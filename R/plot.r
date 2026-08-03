@@ -32,7 +32,11 @@
 #'     first. In the future, this will be changed to always give the primary key
 #'     first.
 #'     \item optionally, the attribute types: specifically, the first element
-#'     when passing the attribute's values into \code{\link{class}}.
+#'     when passing the attribute's values into \code{\link{class}}. If the type
+#'     is a container, such as a list or matrix, this can also include dimension
+#'     information, and information about the contained type.
+#'     \item optionally, a count of missing values. See Examples for how this
+#'     interacts with container types.
 #'   }
 #' }
 #'
@@ -86,6 +90,30 @@
 #' if (requireNamespace("DiagrammeR", quietly = TRUE)) {
 #'   DiagrammeR::grViz(txt_rel)
 #' }
+#' # container types and missing values
+#' nested <- data.frame(key = 1:4, nullable = c(1:3, NA))
+#' ## matrices are reported with their column count and contained type
+#' ## matrix rows only count as missing if the entire row is missing
+#' nested$matrix <- matrix(c(1:2, NA, NA, 5:7, NA, 9:11, NA), ncol = 3)
+#' ## lists and data frames aren't checked for missing values, because it's
+#' ## unclear what should count
+#' nested$list <- list(1L, 2:3, NULL, NA)
+#' nested$df <- data.frame(a = c(1:3, NA), b = c(1:2, NA, NA))
+#' ## lists are reported with any common element length/type
+#' nested$uniform_list <- list(1:2, 3:4, 5:6, 7:8)
+#' ## container type information can be nested
+#' nested$matrix_list <- list(
+#'   matrix(1:4, ncol = 2),
+#'   matrix(5:8, ncol = 2),
+#'   matrix(9:12, ncol = 2),
+#'   matrix(13:16, ncol = 2)
+#' )
+#' nested$nested_list <- replicate(4, list(1:2, 3:4, 5:6), simplify = FALSE)
+#' txt_nested <- gv(nested)
+#' cat(txt_nested)
+#' if (requireNamespace("DiagrammeR", quietly = TRUE)) {
+#'   DiagrammeR::grViz(txt_nested)
+#' }
 #' @export
 gv <- function(x, name = NA_character_, ...) {
   UseMethod("gv", x)
@@ -130,7 +158,12 @@ gv <- function(x, name = NA_character_, ...) {
 #'     first. In the future, this will be changed to always give the primary key
 #'     first.
 #'     \item optionally, the attribute types: specifically, the first element
-#'     when passing the attribute's values into \code{\link{class}}.
+#'     when passing the attribute's values into \code{\link{class}}. If the type
+#'     is a container, such as a list or matrix, this can also include dimension
+#'     information, and information about the contained type.
+#'     \item optionally, a count of missing values.
+#'     \item optionally, a count of missing values. See Examples for how this
+#'     interacts with container types.
 #'   }
 #' }
 #'
@@ -158,6 +191,38 @@ gv <- function(x, name = NA_character_, ...) {
 #' @examples
 #' # simple data.frame example
 #' cat(d2(ChickWeight, "chick"))
+#' # simple database example
+#' db <- autodb(ChickWeight)
+#' cat(d2(db))
+#' # simple relation schemas
+#' rschema <- synthesise(discover(ChickWeight))
+#' cat(d2(rschema))
+#' # simple database schema
+#' dschema <- normalise(discover(ChickWeight))
+#' cat(d2(dschema))
+#' # simple relations
+#' rel <- create(synthesise(discover(ChickWeight)))
+#' cat(d2(rel))
+#' # container types and missing values
+#' nested <- data.frame(key = 1:4, nullable = c(1:3, NA))
+#' ## matrices are reported with their column count and contained type
+#' ## matrix rows only count as missing if the entire row is missing
+#' nested$matrix <- matrix(c(1:2, NA, NA, 5:7, NA, 9:11, NA), ncol = 3)
+#' ## lists and data frames aren't checked for missing values, because it's
+#' ## unclear what should count
+#' nested$list <- list(1L, 2:3, NULL, NA)
+#' nested$df <- data.frame(a = c(1:3, NA), b = c(1:2, NA, NA))
+#' ## lists are reported with any common element length/type
+#' nested$uniform_list <- list(1:2, 3:4, 5:6, 7:8)
+#' ## container type information can be nested
+#' nested$matrix_list <- list(
+#'   matrix(1:4, ncol = 2),
+#'   matrix(5:8, ncol = 2),
+#'   matrix(9:12, ncol = 2),
+#'   matrix(13:16, ncol = 2)
+#' )
+#' nested$nested_list <- replicate(4, list(1:2, 3:4, 5:6), simplify = FALSE)
+#' cat(d2(nested))
 #' @export
 d2 <- function(x, ...) {
   UseMethod("d2", x)
@@ -176,12 +241,15 @@ d2 <- function(x, ...) {
 #' @param name a scalar character, giving the name of the database, if any. This
 #'   name is used for the resulting graph, to allow for easier combining of
 #'   graphs into a single diagram if required.
+#' @param nest_level an integer, giving the amount of nesting allowed when
+#'   giving the class of a list column. Since lists can hold anything in R, this
+#'   allows showing common element classes and lengths.
 #' @inheritParams gv
 #'
 #' @return A scalar character, containing text input for Graphviz.
 #' @seealso The generic \code{\link{gv}}.
 #' @exportS3Method
-gv.database <- function(x, name = NA_character_, ...) {
+gv.database <- function(x, name = NA_character_, nest_level = Inf, ...) {
   if (any(names(x) == ""))
     stop("relation names can not be zero characters in length")
   if (!is.character(name) || length(name) != 1)
@@ -189,6 +257,13 @@ gv.database <- function(x, name = NA_character_, ...) {
   x_labelled <- to_labelled(x)
   x_elemented <- to_elemented(x)
   setup_string <- setup_string_gv(name)
+  classes_info <- lapply(
+    records(x_elemented),
+    lapply,
+    column_class_plot_info,
+    nest_level
+  )
+  NAs_info <- lapply(records(x_elemented), vapply, NAs_plot_info, integer(1))
   df_strings <- Map(
     relation_string_gv,
     attrs = attrs(x_elemented),
@@ -197,10 +272,13 @@ gv.database <- function(x, name = NA_character_, ...) {
     name = names(x_elemented),
     label = names(x_labelled),
     classes = lapply(
-      records(x_elemented),
-      \(df) vapply(df, \(a) class(a)[[1]], character(1))
+      classes_info,
+      vapply,
+      column_class_2gv,
+      character(1)
     ),
     nrow = lapply(records(x_elemented), nrow),
+    n_NAs = NAs_info,
     row_name = "record"
   ) |>
     Reduce(f = c, init = character())
@@ -243,6 +321,9 @@ gv.database <- function(x, name = NA_character_, ...) {
 #' @param reference_level a character scalar, indicating the format to use for
 #'   foreign key references. "relation" only specifies the relations involved;
 #'   "attr" also specifies the attributes involved, one pair at a time.
+#' @param nest_level an integer, giving the amount of nesting allowed when
+#'   giving the class of a list column. Since lists can hold anything in R, this
+#'   allows showing common element classes and lengths.
 #' @inheritParams d2
 #'
 #' @return A scalar character, containing text input for D2.
@@ -252,6 +333,7 @@ d2.database <- function(
   x,
   name = NA_character_,
   reference_level = c("attr", "relation"),
+  nest_level = Inf,
   ...
 ) {
   if (any(names(x) == ""))
@@ -262,6 +344,13 @@ d2.database <- function(
   x_labelled <- to_quoted(x)
   x_elemented <- to_quoted(x)
   setup_string <- "direction: right"
+  classes_info <- lapply(
+    records(x_elemented),
+    lapply,
+    column_class_plot_info,
+    nest_level
+  )
+  NAs_info <- lapply(records(x_elemented), vapply, NAs_plot_info, integer(1))
   df_strings <- Map(
     relation_string_d2,
     attrs = attrs(x_elemented),
@@ -270,10 +359,13 @@ d2.database <- function(
     name = names(x),
     label = names(x_labelled),
     classes = lapply(
-      records(x_elemented),
-      \(df) vapply(df, \(a) class(a)[[1]], character(1))
+      classes_info,
+      vapply,
+      column_class_2d2,
+      character(1)
     ),
     nrow = lapply(records(x_elemented), nrow),
+    n_NAs = NAs_info,
     references = lapply(
       names(x_labelled),
       \(label) Filter(\(ref) ref[[1]] == label, references(x_labelled))
@@ -316,12 +408,15 @@ d2.database <- function(
 #'
 #' @param x a \code{\link{relation}}.
 #' @param name a character scalar, giving the name of the schema, if any.
+#' @param nest_level an integer, giving the amount of nesting allowed when
+#'   giving the class of a list column. Since lists can hold anything in R, this
+#'   allows showing common element classes and lengths.
 #' @inheritParams gv
 #'
 #' @return A scalar character, containing text input for Graphviz.
 #' @seealso The generic \code{\link{gv}}.
 #' @exportS3Method
-gv.relation <- function(x, name = NA_character_, ...) {
+gv.relation <- function(x, name = NA_character_, nest_level = Inf, ...) {
   if (any(names(x) == ""))
     stop("relation names can not be zero characters in length")
   if (!is.character(name) || length(name) != 1)
@@ -329,6 +424,13 @@ gv.relation <- function(x, name = NA_character_, ...) {
   x_labelled <- to_labelled(x)
   x_elemented <- to_elemented(x)
   setup_string <- setup_string_gv(name)
+  classes_info <- lapply(
+    records(x_elemented),
+    lapply,
+    column_class_plot_info,
+    nest_level
+  )
+  NAs_info <- lapply(records(x_elemented), vapply, NAs_plot_info, integer(1))
   df_strings <- Map(
     relation_string_gv,
     attrs = attrs(x_elemented),
@@ -337,10 +439,13 @@ gv.relation <- function(x, name = NA_character_, ...) {
     name = names(x_elemented),
     label = names(x_labelled),
     classes = lapply(
-      records(x_elemented),
-      \(df) vapply(df, \(a) class(a)[[1]], character(1))
+      classes_info,
+      vapply,
+      column_class_2gv,
+      character(1)
     ),
-    nrow = lapply(records(x_elemented), nrow)
+    nrow = lapply(records(x_elemented), nrow),
+    n_NAs = NAs_info
   ) |>
     Reduce(f = c, init = character())
   teardown_string <- c("}", "")
@@ -366,12 +471,15 @@ gv.relation <- function(x, name = NA_character_, ...) {
 #'
 #' @param x a \code{\link{relation}}.
 #' @param name a character scalar, giving the name of the schema, if any.
+#' @param nest_level an integer, giving the amount of nesting allowed when
+#'   giving the class of a list column. Since lists can hold anything in R, this
+#'   allows showing common element classes and lengths.
 #' @inheritParams d2
 #'
 #' @return A scalar character, containing text input for D2.
 #' @seealso The generic \code{\link{d2}}.
 #' @exportS3Method
-d2.relation <- function(x, name = NA_character_, ...) {
+d2.relation <- function(x, name = NA_character_, nest_level = Inf, ...) {
   if (any(names(x) == ""))
     stop("relation names can not be zero characters in length")
   if (!is.character(name) || length(name) != 1)
@@ -379,6 +487,13 @@ d2.relation <- function(x, name = NA_character_, ...) {
   x_labelled <- to_quoted(x)
   x_elemented <- to_quoted(x)
   setup_string <- "direction: right"
+  classes_info <- lapply(
+    records(x_elemented),
+    lapply,
+    column_class_plot_info,
+    nest_level
+  )
+  NAs_info <- lapply(records(x_elemented), vapply, NAs_plot_info, integer(1))
   df_strings <- Map(
     relation_string_d2,
     attrs = attrs(x_elemented),
@@ -387,10 +502,13 @@ d2.relation <- function(x, name = NA_character_, ...) {
     name = names(x),
     label = names(x_labelled),
     classes = lapply(
-      records(x_elemented),
-      \(df) vapply(df, \(a) class(a)[[1]], character(1))
+      classes_info,
+      vapply,
+      column_class_2d2,
+      character(1)
     ),
     nrow = lapply(records(x_elemented), nrow),
+    n_NAs = NAs_info,
     MoreArgs = list(references = list())
   ) |>
     Reduce(f = c, init = character())
@@ -654,33 +772,18 @@ d2.relation_schema <- function(x, name = NA_character_, ...) {
 #' @param name a character scalar, giving the name of the record, if any. The
 #'   name must be non-empty, since it is also used to name the single table in
 #'   the plot. Defaults to `NA`: if left missing, it is set to "data".
+#' @param nest_level an integer, giving the amount of nesting allowed when
+#'   giving the class of a list column. Since lists can hold anything in R, this
+#'   allows showing common element classes and lengths.
 #' @inheritParams gv
 #'
 #' @return A scalar character, containing text input for Graphviz.
 #' @seealso The generic \code{\link{gv}}.
 #' @exportS3Method
-gv.data.frame <- function(x, name = NA_character_, ...) {
-  if (is.na(name))
-    name <- "data"
-  if (name == "")
-    stop("name must be non-empty")
-  if (!is.character(name) || length(name) != 1)
-    stop("name must be a length-one character")
-  setup_string <- setup_string_gv(name)
-  x_labelled <- x
-  names(x_labelled) <- to_attr_name(names(x))
-  x_elemented <- x
-  names(x_elemented) <- to_element_name(names(x))
-  table_string <- relation_string_gv(
-    attrs = names(x_elemented),
-    attr_labels = names(x_labelled),
-    keys = list(),
-    name = to_element_name(name),
-    label = to_node_name(name),
-    classes = vapply(x, \(a) class(a)[[1]], character(1)),
-    nrow = nrow(x),
-    row_name = "row"
-  )
+gv.data.frame <- function(x, name = NA_character_, nest_level = Inf, ...) {
+  plot_info <- df_plot_info(x, name, nest_level)
+  setup_string <- setup_string_gv(plot_info$name)
+  table_string <- df_string_gv(plot_info)
   teardown_string <- c("}", "")
   paste(
     c(
@@ -705,35 +808,18 @@ gv.data.frame <- function(x, name = NA_character_, ...) {
 #' @param name a character scalar, giving the name of the record, if any. The
 #'   name must be non-empty, since it is also used to name the single table in
 #'   the plot. Defaults to `NA`: if left missing, it is set to "data".
+#' @param nest_level an integer, giving the amount of nesting allowed when
+#'   giving the class of a list column. Since lists can hold anything in R, this
+#'   allows showing common element classes and lengths.
 #' @inheritParams d2
 #'
 #' @return A scalar character, containing text input for Graphviz.
 #' @seealso The generic \code{\link{d2}}.
 #' @exportS3Method
-d2.data.frame <- function(x, name = NA_character_, ...) {
-  if (is.na(name))
-    name <- "data"
-  if (name == "")
-    stop("name must be non-empty")
-  if (!is.character(name) || length(name) != 1)
-    stop("name must be a length-one character")
-
-  x_labelled <- x
-  names(x_labelled) <- to_quoted_name(names(x))
-  x_elemented <- x
-  names(x_elemented) <- to_quoted_name(names(x))
+d2.data.frame <- function(x, name = NA_character_, nest_level = Inf, ...) {
+  plot_info <- df_plot_info(x, name, nest_level)
   setup_string <- "direction: right"
-  table_string <- relation_string_d2(
-    attrs = names(x_elemented),
-    attr_labels = names(x_labelled),
-    keys = list(),
-    name = name,
-    label = to_quoted_name(name),
-    classes = vapply(x, \(a) class(a)[[1]], character(1)),
-    nrow = nrow(x),
-    references = list(),
-    row_name = "row"
-  )
+  table_string <- df_string_d2(plot_info)
   teardown_string <- ""
   paste(
     c(setup_string, table_string, teardown_string),
@@ -754,6 +840,206 @@ setup_string_gv <- function(df_name) {
   )
 }
 
+NAs_plot_info <- function(a) {
+  UseMethod("NAs_plot_info")
+}
+
+#' @exportS3Method
+NAs_plot_info.matrix <- function(a) {
+  sum(apply(is.na(a), 1, all))
+}
+
+#' @exportS3Method
+NAs_plot_info.data.frame <- function(a) {
+  0L
+}
+
+#' @exportS3Method
+NAs_plot_info.list <- function(a) {
+  0L
+}
+
+#' @exportS3Method
+NAs_plot_info.default <- function(a) {
+  sum(is.na(a))
+}
+
+column_class_plot_info <- function(a, nest_level) {
+  size_info <- column_size_plot_info(a)
+  sublist_info <- column_subclass_plot_info(a, nest_level)
+  c(
+    list(class = class(a)[[1]]),
+    if (length(size_info) > 0)
+      list(length = size_info),
+    if (length(sublist_info) > 0)
+      list(element = sublist_info)
+  )
+}
+
+column_class_2gv <- function(plot_info) {
+  if (length(plot_info) == 0)
+    return(character())
+  paste0(
+    plot_info$class,
+    if (!is.null(plot_info$length))
+      paste0("[", toString(ifelse(is.na(plot_info$length), "", plot_info$length)), "]", recycle0 = TRUE),
+    paste0("&lt;", column_class_2gv(plot_info$element), "&gt;", recycle0 = TRUE)
+  )
+}
+
+column_class_2d2 <- function(plot_info) {
+  if (length(plot_info) == 0)
+    return(character())
+  paste0(
+    plot_info$class,
+    if (!is.null(plot_info$length))
+      paste0("[", toString(ifelse(is.na(plot_info$length), "", plot_info$length)), "]", recycle0 = TRUE),
+    paste0("<", column_class_2d2(plot_info$element), ">", recycle0 = TRUE)
+  )
+}
+
+column_subclass_plot_info <- function(a, nest_level) {
+  if (nest_level <= 0)
+    return(list())
+  UseMethod("column_subclass_plot_info")
+}
+
+#' @exportS3Method
+column_subclass_plot_info.default <- function(a, nest_level) {
+  list()
+}
+
+#' @exportS3Method
+column_subclass_plot_info.matrix <- function(a, nest_level) {
+  b <- a[TRUE, drop = TRUE]
+  cl <- class(b)[[1]]
+  if (cl != "list")
+    return(list(class = cl))
+  sublist_info <- column_subclass_plot_info(b, nest_level - 1L)
+  if (length(sublist_info) == 0)
+    list(class = cl)
+  else
+    list(class = cl, element = sublist_info)
+}
+
+#' @exportS3Method
+column_subclass_plot_info.list <- function(a, nest_level) {
+  if (length(a) == 0)
+    return(list())
+  size_info <- lapply(a, column_subsize_plot_info)
+  size_agreement <- if (all(lengths(size_info) == length(size_info[[1]])))
+    Reduce(\(x, y) ifelse(x == y, x, NA_integer_), size_info)
+  else
+    integer()
+  element_classes <- vapply(a, \(x) class(x)[[1]], character(1))
+  same_class <- all(element_classes == element_classes[[1]])
+
+  res <- c(
+    if (same_class) list(class = element_classes[[1]]),
+    if (any(!is.na(size_agreement)) && any(element_classes != "NULL")) list(length = size_agreement)
+  )
+  if (!same_class)
+    return(res)
+  if (element_classes[[1]] != "list" || nest_level <= 0)
+    return(res)
+  subelements <- unlist(a, recursive = FALSE)
+  if (length(subelements) == 0)
+    return(res)
+  substrings <- column_subclass_plot_info(
+    subelements,
+    nest_level - 1L
+  )
+  if (length(substrings) == 0)
+    return(res)
+  c(res, list(element = substrings))
+}
+
+column_subsize_plot_info <- function(a) {
+  UseMethod("column_subsize_plot_info")
+}
+
+#' @exportS3Method
+column_subsize_plot_info.default <- function(a) {
+  NROW(a)
+}
+
+#' @exportS3Method
+column_subsize_plot_info.matrix <- function(a) {
+  dim(a)
+}
+
+#' @exportS3Method
+column_subsize_plot_info.data.frame <- function(a) {
+  dim(a)
+}
+
+column_size_plot_info <- function(a) {
+  UseMethod("column_size_plot_info")
+}
+
+#' @exportS3Method
+column_size_plot_info.default <- function(a) {
+  integer()
+}
+
+#' @exportS3Method
+column_size_plot_info.matrix <- function(a) {
+  ncol(a)
+}
+
+#' @exportS3Method
+column_size_plot_info.data.frame <- function(a) {
+  ncol(a)
+}
+
+df_string_gv <- function(plot_info) {
+  relation_string_gv(
+    attrs = to_element_name(plot_info$names),
+    attr_labels = to_attr_name(plot_info$names),
+    keys = list(),
+    name = to_element_name(plot_info$name),
+    label = to_node_name(plot_info$name),
+    classes = vapply(plot_info$classes, column_class_2gv, character(1)),
+    nrow = plot_info$length,
+    n_NAs = plot_info$n_NAs,
+    row_name = "row"
+  )
+}
+
+df_string_d2 <- function(plot_info) {
+  relation_string_d2(
+    attrs = to_quoted_name(plot_info$names),
+    attr_labels = to_quoted_name(plot_info$names),
+    keys = list(),
+    name = plot_info$name,
+    label = to_quoted_name(plot_info$name),
+    classes = vapply(plot_info$classes, column_class_2d2, character(1)),
+    nrow = plot_info$length,
+    n_NAs = plot_info$n_NAs,
+    references = list(),
+    row_name = "row"
+  )
+}
+
+df_plot_info <- function(x, name, nest_level) {
+  if (is.na(name))
+    name <- "data"
+  if (name == "")
+    stop("name must be non-empty")
+  if (!is.character(name) || length(name) != 1)
+    stop("name must be a length-one character")
+
+  classes_info <- lapply(x, column_class_plot_info, nest_level)
+  NAs_info <- vapply(x, NAs_plot_info, integer(1))
+  list(
+    name = name,
+    names = names(x),
+    length = nrow(x),
+    classes = classes_info,
+    n_NAs = NAs_info
+  )
+}
+
 relation_string_gv <- function(
   attrs,
   attr_labels,
@@ -762,6 +1048,7 @@ relation_string_gv <- function(
   label,
   classes,
   nrow,
+  n_NAs,
   row_name = c("record", "row")
 ) {
   row_name <- match.arg(row_name)
@@ -770,7 +1057,8 @@ relation_string_gv <- function(
     attrs,
     attr_labels,
     keys,
-    classes
+    classes,
+    n_NAs
   )
   columns_label <- c(
     paste0(
@@ -805,6 +1093,7 @@ relation_string_d2 <- function(
   label,
   classes,
   nrow,
+  n_NAs,
   references,
   row_name = c("record", "row")
 ) {
@@ -815,6 +1104,7 @@ relation_string_d2 <- function(
     attr_labels,
     keys,
     classes,
+    n_NAs,
     references
   )
   columns_label <- columns_string
@@ -833,7 +1123,8 @@ relation_schema_string <- function(
   name,
   label
 ) {
-  columns_string <- columns_schema_string_gv(attrs, attr_labels, keys)
+  key_membership <- column_schema_keys_plot_info(attrs, keys)
+  columns_string <- columns_schema_string_gv(attrs, attr_labels, key_membership)
   columns_label <- c(
     paste0(
       "<TR><TD COLSPAN=\"", length(keys) + 1, "\">",
@@ -864,11 +1155,13 @@ relation_schema_string_d2 <- function(
   label,
   references
 ) {
+  key_matches <- column_schema_keys_plot_info(attrs, keys)
+  column_schema_ref_matches <- column_schema_references_plot_info(attrs, references)
   columns_string <- columns_schema_string_d2(
     attrs,
     attr_labels,
-    keys,
-    references
+    key_matches,
+    column_schema_ref_matches
   )
   columns_label <- columns_string
   c(
@@ -879,41 +1172,35 @@ relation_schema_string_d2 <- function(
   )
 }
 
-columns_string_gv <- function(col_names, col_labels, keys, col_classes) {
-  key_membership_strings <- vapply(
-    col_names,
-    \(nm) paste(
-      vapply(
-        keys,
-        \(key) if (is.element(nm, key))
-          "<TD BGCOLOR=\"black\"></TD>"
-        else
-          "<TD></TD>",
-        character(1)
-      ),
-      collapse = ""
-    ),
-    character(1)
+columns_string_gv <- function(col_names, col_labels, keys, col_classes, n_NAs) {
+  keymembs <- outer(col_names, keys, Vectorize(is.element))
+  keymembs[] <- paste0(
+    "<TD",
+    ifelse(keymembs, " BGCOLOR=\"black\"", ""),
+    "></TD>",
+    recycle0 = TRUE
   )
-  column_typing_info <- paste0(
+  key_membership_strings <- apply(keymembs, 1, paste, collapse = "")
+  paste0(
     "<TR><TD PORT=\"TO_",
     col_labels,
     "\">",
     col_names,
     "</TD>",
     key_membership_strings,
-    "<TD PORT=\"FROM_", col_labels, "\">", col_classes, "</TD>",
+    "<TD PORT=\"FROM_", col_labels, "\">", col_classes, ifelse(n_NAs == 0, "", paste0(" (", with_number(n_NAs, "NA", "", "s"), ")")), "</TD>",
     "</TR>",
     recycle0 = TRUE
   )
-  column_typing_info
 }
 
-columns_string_d2 <- function(col_names, col_labels, keys, col_classes, references) {
+columns_string_d2 <- function(col_names, col_labels, keys, col_classes, n_NAs, references) {
   column_typing_info <- paste0(
     col_names,
-    ": ",
+    ": \"",
     col_classes,
+    ifelse(n_NAs == 0, "", paste0(" (", with_number(n_NAs, "NA", "", "s"), ")")),
+    "\"",
     recycle0 = TRUE
   )
   key_matches <- lapply(
@@ -942,58 +1229,58 @@ columns_string_d2 <- function(col_names, col_labels, keys, col_classes, referenc
   paste0(column_typing_info, constraint_strings)
 }
 
-columns_schema_string_gv <- function(col_names, col_labels, keys) {
-  key_membership_strings <- vapply(
-    col_names,
-    \(nm) paste(
-      vapply(
-        seq_along(keys),
-        \(n) {
-          preamble <- if (n == length(keys))
-            paste0("<TD PORT=\"FROM_", col_labels[[match(nm, col_names)]], "\"")
-          else
-            "<TD"
-          cell <- if (is.element(nm, keys[[n]]))
-            " BGCOLOR=\"black\"></TD>"
-          else
-            "></TD>"
-          paste0(preamble, cell)
-        },
-        character(1)
-      ),
-      collapse = ""
-    ),
-    character(1)
+columns_schema_string_gv <- function(
+  col_names,
+  col_labels,
+  key_membership
+) {
+  nkeys <- ncol(key_membership)
+  stopifnot(nkeys > 0)
+  key_membership_mat <- matrix(
+    "",
+    nrow = length(col_names),
+    ncol = nkeys
   )
-  column_typing_info <- paste0(
-    "<TR><TD PORT=\"TO_",
+  key_membership_mat[, nkeys] <- paste0(
+    key_membership_mat[, nkeys],
+    " PORT=\"FROM_",
     col_labels,
-    "\">",
-    col_names,
-    "</TD>",
-    key_membership_strings,
+    "\""
+  )
+  key_membership_mat[] <- paste0(
+    key_membership_mat,
+    ifelse(key_membership, " BGCOLOR=\"black\"", "")
+  )
+  key_membership_mat[] <- paste0(
+    "<TD",
+    key_membership_mat,
+    "></TD>"
+  )
+
+  paste0(
+    "<TR>",
+    "<TD PORT=\"TO_", col_labels, "\">", col_names, "</TD>",
+    apply(key_membership_mat, 1, paste, collapse = ""),
     "</TR>",
     recycle0 = TRUE
   )
-  column_typing_info
 }
 
-columns_schema_string_d2 <- function(col_names, col_labels, keys, references) {
-  key_matches <- lapply(keys, \(k) is.element(col_labels, k)) |>
-    do.call(what = cbind)
-  key_labels <- paste0("UNQ", seq_along(keys) - 1)
-  if (length(keys) >= 1)
-    key_labels[[1]] <- "PK"
-  key_constraints <- apply(key_matches, 1, \(x) key_labels[x], simplify = FALSE)
-  ref_constraints <- lapply(
-    col_labels,
-    \(cl) vapply(references, \(ref) is.element(cl, ref[[2]]), logical(1))
-  ) |>
-    sapply(\(x) paste0("FK", which(x), recycle0 = TRUE))
+columns_schema_string_d2 <- function(
+  col_names,
+  col_labels,
+  key_matches,
+  ref_matches
+) {
+  nkeys <- ncol(key_matches)
+  stopifnot(nkeys > 0)
+  nrefs <- ncol(ref_matches)
+  key_labels <- c("PK", paste0("UNQ", seq_len(nkeys - 1), recycle0 = TRUE))
+  fk_labels <- paste0("FK", seq_len(nrefs), recycle0 = TRUE)
   all_constraints <- mapply(
     \(x, y) paste(c(x, y), collapse = "; "),
-    key_constraints,
-    ref_constraints
+    apply(key_matches, 1, \(x) key_labels[x], simplify = FALSE),
+    apply(ref_matches, 1, \(x) fk_labels[x], simplify = FALSE)
   )
   constraint_strings <- ifelse(
     nchar(all_constraints) == 0,
@@ -1005,6 +1292,22 @@ columns_schema_string_d2 <- function(col_names, col_labels, keys, references) {
     col_names,
     constraint_strings,
     recycle0 = TRUE
+  )
+}
+
+column_schema_keys_plot_info <- function(col_names, keys) {
+  outer(
+    col_names,
+    keys,
+    \(cls, ks) as.logical(mapply(is.element, cls, ks))
+  )
+}
+
+column_schema_references_plot_info <- function(col_names, references) {
+  outer(
+    col_names,
+    references,
+    \(cls, refs) as.logical(mapply(is.element, cls, lapply(refs, `[[`, 2)))
   )
 }
 

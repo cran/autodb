@@ -114,11 +114,10 @@ rejoin <- function(database) {
     old_nrow <- nrow(main_relation)
     # unique() needed here in case floating-point values cause duplicates in
     # merge
-    main_relation <- unique(df_join(
+    main_relation <- df_unique(df_join(
       main_relation,
       mergee_df[, c(key, new_attrs), drop = FALSE],
-      by = key,
-      sort = FALSE
+      by = key
     ))
     stopifnot(identical(nrow(main_relation), old_nrow))
   }

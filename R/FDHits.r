@@ -91,8 +91,7 @@ FDHitsSep <- function(lookup, determinants, dependants, detset_limit, D, report)
     "\n",
     with_number(partition_handler$cache_size(), "partition", " cached", "s cached")
   ))
-  res <- lapply(res, lapply, \(x) attrs[as.logical(rawToBits(x))])
-  functional_dependency(res, attrs)
+  lapply(res, lapply, \(x) attrs[as.logical(rawToBits(x))])
 }
 
 FDHitsJoint <- function(lookup, determinants, dependants, detset_limit, D, report) {
@@ -163,9 +162,8 @@ FDHitsJoint <- function(lookup, determinants, dependants, detset_limit, D, repor
   ))
   res <- lapply(res, lapply, \(x) attrs[as.logical(rawToBits(x))])
   # split up into one-dependant FDs
-  res <- lapply(res, \(x) lapply(x[[2]], \(dependant) list(x[[1]], dependant))) |>
-    unlist(recursive = FALSE)
-  functional_dependency(res, attrs)
+  lapply(res, \(x) lapply(x[[2]], \(dependant) list(x[[1]], dependant))) |>
+    Reduce(f = c, init = list())
 }
 
 FDHitsSep_visit <- function(
@@ -190,7 +188,10 @@ FDHitsSep_visit <- function(
     # remove B from V if ∃ C∈S ∀ E∈critical(C,A,S): B∈E,
     # i.e. adding B to S would make some C in S redundant WRT A
     # does not check for B being redundant if added
-    common <- Reduce(`&`, crits) & V_bitset
+    common <- partition_handler$key_intersect(
+      Reduce(partition_handler$key_intersect, crits),
+      V_bitset
+    )
     V_bitset <- partition_handler$subkey_difference(V_bitset, common)
   }
   # validation at the leaves
@@ -221,7 +222,9 @@ FDHitsSep_visit <- function(
     stop("edge selection impossible at ", node_string)
   }
   E_bitset <- uncovered[[sample_minheur_sep(uncovered, V_bitset)]]
-  Bs_bitsets <- partition_handler$decompose_key(E_bitset & V_bitset)
+  Bs_bitsets <- partition_handler$decompose_key(
+    partition_handler$key_intersect(E_bitset, V_bitset)
+  )
   res <- list()
   # rev() differs from the description in the paper, but the authors gave it as
   # a fix in private correspondence; I'll add a reference when they've published
@@ -230,15 +233,15 @@ FDHitsSep_visit <- function(
     rev(seq_along(Bs_bitsets)),
     \(n) {
       b <- Bs_bitsets[[n]]
-      rem <- Reduce(`|`, Bs_bitsets[seq_len(n)])
+      rem <- Reduce(partition_handler$key_union, Bs_bitsets[seq_len(n)])
       list(
-        S = S_bitset | b,
-        V = V_bitset & !rem,
+        S = partition_handler$distinct_key_union(S_bitset, b),
+        V = partition_handler$subkey_difference(V_bitset, rem),
         W = A_bitset,
         depth = depth + 1L,
         oldS = S_bitset,
         addS = b,
-        remW = partition_handler$key(integer())
+        remW = partition_handler$empty_key
       )
     }
   )
@@ -280,18 +283,26 @@ FDHitsJoint_visit <- function(
         \(C) {
           # Bs that would make C redundant WRT A
           Reduce(
-            `&`,
+            partition_handler$key_intersect,
             partition_handler$fetch_critical_diffsets(C, A, S_bitset),
             init = partition_handler$full_key
           )
         }
       )
       # Bs that would make some C redundant WRT A
-      Reduce(`|`, commons, init = partition_handler$empty_key)
+      Reduce(
+        partition_handler$key_union,
+        commons,
+        init = partition_handler$empty_key
+      )
     }
   )
   # Bs that, for every A, make some C redundant
-  always_common <- Reduce(`&`, anywhere_common, init = V_bitset)
+  always_common <- Reduce(
+    partition_handler$key_intersect,
+    anywhere_common,
+    init = V_bitset
+  )
   V_bitset <- partition_handler$subkey_difference(V_bitset, always_common)
   # validation at the leaves
   uncovered_bitsets <- partition_handler$fetch_uncovered_keys(S_bitset, W_bitset)
@@ -321,35 +332,50 @@ FDHitsJoint_visit <- function(
     stop("edge selection impossible at ", node_string)
   }
   E_bitset <- sample_minheur_joint(uncovered_bitsets, V_bitset, W_bitset)
-  Bs_bitset <- E_bitset & V_bitset
+  Bs_bitset <- partition_handler$key_intersect(E_bitset, V_bitset)
   Bs_bitsets <- partition_handler$decompose_key(Bs_bitset)
   res <- list()
   # rev() differs from the description in the paper, but the authors gave it as
   # a fix in private correspondence; I'll add a reference when they've published
   # the new work
   new_nodes <- c(
-    if (any((W_bitset & E_bitset) != W_bitset))
+    if (any((partition_handler$key_intersect(W_bitset, E_bitset)) != W_bitset))
       list(list(
         S = S_bitset,
         V = V_bitset,
-        W = W_bitset & !E_bitset,
+        W = partition_handler$key_difference(W_bitset, E_bitset),
         depth = depth + 1L,
         oldS = S_bitset,
-        addS = partition_handler$key(integer()),
-        remW = partition_handler$subkey_difference(old_W, W_bitset & !E_bitset)
+        addS = partition_handler$empty_key,
+        remW = partition_handler$subkey_difference(
+          old_W,
+          partition_handler$key_difference(W_bitset, E_bitset)
+        )
       )), # mu_0
     lapply( # mu_i
       rev(seq_along(Bs_bitsets)),
       \(n) {
         B <- Bs_bitsets[[n]]
         list(
-          S = S_bitset | B,
-          V = V_bitset & !Reduce(`|`, Bs_bitsets[seq_len(n)]),
-          W = W_bitset & E_bitset & !B,
+          S = partition_handler$distinct_key_union(S_bitset, B),
+          V = partition_handler$subkey_difference(
+            V_bitset,
+            Reduce(partition_handler$key_union, Bs_bitsets[seq_len(n)])
+          ),
+          W = partition_handler$key_intersect(
+            W_bitset,
+            partition_handler$subkey_difference(E_bitset, B)
+          ),
           depth = depth + 1L,
           oldS = S_bitset,
           addS = B,
-          remW = partition_handler$subkey_difference(old_W, W_bitset & E_bitset & !B)
+          remW = partition_handler$subkey_difference(
+            old_W,
+            partition_handler$key_intersect(
+              W_bitset,
+              partition_handler$subkey_difference(E_bitset, B)
+            )
+          )
         )
       }
     )
@@ -378,6 +404,9 @@ uncov <- function(S, W, D) {
 }
 
 sample_minheur_joint <- function(set_bitsets, V_bitset, W_bitset) {
+  # minimise |E /\ V| + |W \ E|
+  # Per Bleifuss et al., this is based on the mu0 branch reducing W to W \ E,
+  # and each additional branch adding an element from E /\ V to S.
   if (length(set_bitsets) == 0)
     stop("can't sample edge from empty set")
   heuristics <- vapply(
@@ -389,8 +418,7 @@ sample_minheur_joint <- function(set_bitsets, V_bitset, W_bitset) {
 }
 
 sample_minheur_sep <- function(set_bitsets, V_bitset) {
-  # For FDHitsSep, |W| = 1 and W /\ E is empty, so second part
-  # of heuristic in sample_minheur_joint is redundant
+  # As for FDHitsJoint, but |W| = 1, so W \ E is always empty.
   if (length(set_bitsets) == 0)
     stop("can't sample edge from empty set")
   heuristics <- vapply(
