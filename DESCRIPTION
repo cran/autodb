@@ -1,6 +1,6 @@
 Package: autodb
 Title: Automatic Database Normalisation for Data Frames
-Version: 3.3.0
+Version: 3.3.1
 Authors@R: 
     person(
       "Mark",
@@ -21,7 +21,6 @@ Description: Automatic normalisation of a data frame to third normal form, with
 License: BSD_3_clause + file LICENSE
 Encoding: UTF-8
 Language: en-GB
-RoxygenNote: 7.3.3
 Depends: R (>= 4.1.0)
 Suggests: rlang, spelling, DiagrammeR (>= 1.0.7), testthat (>= 3.3.0),
         R.utils (>= 2.11.0), hedgehog (>= 0.1), tibble (>= 3.2.1),
@@ -32,10 +31,11 @@ LazyData: true
 URL: https://charnelmouse.github.io/autodb/,
         https://github.com/CharnelMouse/autodb
 BugReports: https://github.com/CharnelMouse/autodb/issues
+Config/roxygen2/version: 8.1.0
 NeedsCompilation: no
-Packaged: 2026-08-03 20:10:38 UTC; Mark
+Packaged: 2026-08-21 11:53:09 UTC; Mark
 Author: Mark Webster [aut, cre] (ORCID:
     <https://orcid.org/0000-0002-3351-0686>)
 Maintainer: Mark Webster <markwebster204@yahoo.co.uk>
 Repository: CRAN
-Date/Publication: 2026-08-03 22:20:02 UTC
+Date/Publication: 2026-08-21 13:40:33 UTC
